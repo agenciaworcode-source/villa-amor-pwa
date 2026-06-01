@@ -123,7 +123,7 @@ export interface ExecutionStep {
   id: string
   execution_id: string
   pop_step_id: string
-  status: 'pending' | 'completed' | 'skipped'
+  status: 'pending' | 'in_progress' | 'completed' | 'skipped'
   completed_at: string | null
   notes: string | null
   created_at: string
