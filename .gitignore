@@ -12,6 +12,10 @@
 
 # Testing
 /coverage
+/playwright-report
+/test-results
+/playwright/.auth
+.env.test
 
 # Next.js
 /.next/
@@ -33,3 +37,7 @@
 # TypeScript
 *.tsbuildinfo
 next-env.d.ts
+
+# pops
+
+/pops
