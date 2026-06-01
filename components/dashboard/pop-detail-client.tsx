@@ -249,7 +249,7 @@ export function POPDetailClient({ pop, initialBlocks, allResidents, initialAssig
 
                   {block.steps.length === 0 ? (
                     <div style={{ padding: '20px', color: '#9C8E80', fontSize: 13, textAlign: 'center', fontStyle: 'italic' }}>
-                      Nenhum passo. Clique em "+ Passo" para adicionar.
+                      Nenhum passo. Clique em &quot;+ Passo&quot; para adicionar.
                     </div>
                   ) : block.steps.map((step, si) => (
                     <div
