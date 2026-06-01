@@ -27,21 +27,29 @@ export default function ShiftHandoverPage() {
     e.preventDefault()
     if (!notes.trim()) return
 
+    if (!user?.id) {
+      toast('Sessão inválida. Faça login novamente.', 'error')
+      return
+    }
+    if (!currentShift) {
+      toast('Nenhum turno ativo para encerrar.', 'error')
+      return
+    }
+
     setSending(true)
     try {
       await shiftRepository.createHandover({
-        shift_from_id: currentShift?.id,
-        user_from_id: user?.id,
+        shift_from_id: currentShift.id,
+        user_from_id: user.id,
         notes: notes.trim(),
       })
 
-      if (currentShift) {
-        await shiftRepository.endShift(currentShift.id)
-      }
+      await shiftRepository.endShift(currentShift.id)
 
       toast('Passagem de plantão registrada com sucesso!', 'success')
       router.push('/home')
-    } catch {
+    } catch (err) {
+      console.error('Erro ao registrar passagem de plantão:', err)
       toast('Erro ao registrar passagem de plantão. Tente novamente.', 'error')
     } finally {
       setSending(false)
@@ -90,11 +98,16 @@ export default function ShiftHandoverPage() {
 
           <button
             type="submit"
-            disabled={sending || !notes.trim()}
+            disabled={sending || !notes.trim() || !currentShift}
             className="w-full h-[58px] bg-gold-400 text-white rounded-2xl font-bold text-lg shadow-gold active:scale-[0.98] transition-all disabled:opacity-50"
           >
             {sending ? 'REGISTRANDO...' : 'CONFIRMAR PASSAGEM'}
           </button>
+          {!currentShift && (
+            <p className="text-center text-xs text-red-500 font-bold mt-1">
+              Inicie um turno antes de fazer a passagem de plantão.
+            </p>
+          )}
         </form>
       </main>
     </div>
