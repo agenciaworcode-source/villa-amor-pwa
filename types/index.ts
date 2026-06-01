@@ -73,6 +73,7 @@ export interface POP {
   start_time_expected: string | null
   deadline_time: string | null
   tolerance_minutes: number
+  requires_resident: boolean   // false = manutenção, cozinha, etc.
   active: boolean
   version: number
   created_at: string

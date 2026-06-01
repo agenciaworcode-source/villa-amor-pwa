@@ -81,14 +81,18 @@ export default function ExecutionPage() {
         let currentExec: Execution | null = null
 
         if (executionId === 'new') {
-          if (!residentId || !popId) { router.push('/home'); return }
+          // popId obrigatório; residentId pode ser null para POPs sem residente
+          if (!popId) { router.push('/home'); return }
 
           const existing = await executionRepository.findTodayExecution(popId, residentId, user.id)
           currentExec = existing ?? await executionRepository.create({
-            pop_id: popId, resident_id: residentId, user_id: user.id, status: 'in_progress'
+            pop_id: popId,
+            resident_id: residentId ?? undefined,
+            user_id: user.id,
+            status: 'in_progress'
           })
 
-          if (!existing) {
+          if (!existing && residentId) {
             try { await popRepository.advanceRotation(popId, user.id) } catch { /* ignora */ }
           }
         } else {
@@ -99,10 +103,10 @@ export default function ExecutionPage() {
         }
 
         const [resData, popData] = await Promise.all([
-          residentRepository.findById(residentId!),
+          residentId ? residentRepository.findById(residentId) : Promise.resolve(null),
           popRepository.findByIdWithDetails(popId!),
         ])
-        if (!resData || !popData) { router.push('/home'); return }
+        if (!popData) { router.push('/home'); return }
 
         setResident(resData)
         setPop(popData)
@@ -230,7 +234,7 @@ export default function ExecutionPage() {
       </div>
     )
   }
-  if (!resident || !pop || !execution) return null
+  if (!pop || !execution) return null
 
   return (
     <GeofenceGate>
@@ -240,8 +244,12 @@ export default function ExecutionPage() {
         <header className="bg-white px-4 py-3 border-b border-cream-200 flex items-center gap-3 shrink-0">
           <button onClick={() => router.back()} className="text-2xl text-dark-800 leading-none">←</button>
           <div className="flex-1 min-w-0">
-            <h1 className="font-bold text-dark-800 text-sm leading-tight truncate">{resident.name}</h1>
-            <p className="text-[10px] text-gold-500 font-bold uppercase tracking-wider truncate">{pop.name}</p>
+            <h1 className="font-bold text-dark-800 text-sm leading-tight truncate">
+              {resident ? resident.name : pop.name}
+            </h1>
+            <p className="text-[10px] text-gold-500 font-bold uppercase tracking-wider truncate">
+              {resident ? pop.name : 'Tarefa Geral'}
+            </p>
           </div>
           <div className="text-right shrink-0">
             <p className="text-xs font-bold tabular-nums text-dark-800">{completedCount}/{allSteps.length}</p>

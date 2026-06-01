@@ -42,22 +42,27 @@ export class SupabaseExecutionRepository implements IExecutionRepository {
     return data as Execution
   }
 
-  async findTodayExecution(popId: string, residentId: string, userId: string): Promise<Execution | null> {
+  async findTodayExecution(popId: string, residentId: string | null, userId: string): Promise<Execution | null> {
     // midnight UTC today
     const todayStart = new Date()
     todayStart.setHours(0, 0, 0, 0)
 
-    const { data, error } = await this.supabase
+    let query = this.supabase
       .from('executions')
       .select('*, steps:execution_steps(*, media:media_files(*))')
       .eq('pop_id', popId)
-      .eq('resident_id', residentId)
       .eq('user_id', userId)
       .gte('created_at', todayStart.toISOString())
       .order('created_at', { ascending: false })
       .limit(1)
-      .maybeSingle()
 
+    if (residentId) {
+      query = query.eq('resident_id', residentId)
+    } else {
+      query = query.is('resident_id', null)
+    }
+
+    const { data, error } = await query.maybeSingle()
     if (error) return null
     return data as Execution | null
   }

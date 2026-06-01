@@ -42,9 +42,10 @@ export default async function TarefasPage() {
     : { data: [] }
 
   // build lookup: `${pop_id}:${resident_id}` → { execId, status }
+  // POPs sem residente usam chave `${pop_id}:no-resident`
   const execLookup: Record<string, { execId: string; status: ExecutionStatus }> = {}
   for (const e of (todayExecsData ?? [])) {
-    const key = `${e.pop_id}:${e.resident_id}`
+    const key = `${e.pop_id}:${e.resident_id ?? 'no-resident'}`
     const cur = execLookup[key]
     // keep highest-rank status
     const rank: Record<string, number> = { completed: 4, in_progress: 3, late: 2, incomplete: 1, pending: 0 }
