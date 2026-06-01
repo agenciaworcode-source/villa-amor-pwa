@@ -28,17 +28,18 @@ export default async function HomePage() {
     weekday: 'long', day: '2-digit', month: 'long',
   })
 
+  const { data: { user } } = await supabase.auth.getUser()
+  const userId = user?.id ?? ''
+
   const [
-    { data: { user } },
     { data: shifts },
     { data: handovers },
     { data: execs },
     { data: alertsData },
   ] = await Promise.all([
-    supabase.auth.getUser(),
     supabase.from('shifts').select('*').eq('date', today).is('ended_at', null).limit(1),
     supabase.from('shift_handovers').select('notes, recorded_at').order('recorded_at', { ascending: false }).limit(1),
-    supabase.from('executions').select('status').gte('created_at', today),
+    supabase.from('executions').select('status').gte('created_at', today).eq('user_id', userId),
     supabase.from('alerts').select('id').is('acknowledged_at', null).limit(1),
   ])
 

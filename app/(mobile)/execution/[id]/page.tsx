@@ -108,6 +108,15 @@ export default function ExecutionPage() {
         ])
         if (!popData) { router.push('/home'); return }
 
+        // ── validação de role ───────────────────────────────────────────────────
+        const userRole = user.user_metadata?.role as string | undefined
+        const privileged = ['admin', 'supervisor']
+        if (userRole && !privileged.includes(userRole) && popData.role_type !== userRole) {
+          toast('Você não tem permissão para executar este protocolo.', 'error')
+          router.push('/home')
+          return
+        }
+
         setResident(resData)
         setPop(popData)
         setExecution(currentExec)

@@ -26,7 +26,7 @@ export default async function TarefasPage() {
   ] = await Promise.all([
     supabase
       .from('pops')
-      .select('id, name, shift_type, start_time_expected, deadline_time, tolerance_minutes, role_type')
+      .select('id, name, shift_type, start_time_expected, deadline_time, tolerance_minutes, role_type, requires_resident')
       .eq('active', true)
       .eq('role_type', userRole ?? '')
       .order('start_time_expected', { ascending: true, nullsFirst: false })
