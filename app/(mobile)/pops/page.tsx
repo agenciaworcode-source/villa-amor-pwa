@@ -11,16 +11,24 @@ export default async function TarefasPage() {
 
   const today = new Date().toISOString().split('T')[0]
 
+  // ── 1. Usuário e role ──────────────────────────────────────────────
+  const { data: { user } } = await supabase.auth.getUser()
+  let userRole = user?.user_metadata?.role as string | undefined
+  if (!userRole && user) {
+    const { data: profile } = await supabase
+      .from('users').select('role').eq('id', user.id).single()
+    userRole = profile?.role as string | undefined
+  }
+
   const [
-    { data: { user } },
     { data: popsData },
     { data: residentsData },
   ] = await Promise.all([
-    supabase.auth.getUser(),
     supabase
       .from('pops')
       .select('id, name, shift_type, start_time_expected, deadline_time, tolerance_minutes, role_type')
       .eq('active', true)
+      .eq('role_type', userRole ?? '')
       .order('start_time_expected', { ascending: true, nullsFirst: false })
       .order('name'),
     supabase
