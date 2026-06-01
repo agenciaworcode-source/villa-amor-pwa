@@ -2,7 +2,7 @@
   "name": "Villa Amor — Gestão Operacional",
   "short_name": "Villa Amor",
   "description": "Sistema de gestão assistencial para a Villa Amor Marília",
-  "start_url": "/home",
+  "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait",

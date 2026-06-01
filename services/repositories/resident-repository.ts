@@ -110,21 +110,25 @@ export class SupabaseResidentRepository implements IResidentRepository {
   }
 
   async deactivate(id: string): Promise<void> {
-    const { error } = await this.supabase
+    const { data, error } = await this.supabase
       .from('residents')
       .update({ active: false })
       .eq('id', id)
+      .select('id')
 
     if (error) throw new Error(`Falha ao desativar residente: ${error.message} (${error.code})`)
+    if (!data || data.length === 0) throw new Error('Sem permissão para desativar este residente. Verifique sua sessão.')
   }
 
   async delete(id: string): Promise<void> {
-    const { error } = await this.supabase
+    const { data, error } = await this.supabase
       .from('residents')
       .delete()
       .eq('id', id)
+      .select('id')
 
     if (error) throw new Error(`Falha ao excluir residente: ${error.message} (${error.code})`)
+    if (!data || data.length === 0) throw new Error('Sem permissão para excluir este residente. Verifique sua sessão.')
   }
 }
 

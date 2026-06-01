@@ -73,6 +73,7 @@ export async function middleware(req: NextRequest) {
     const isDashboardRoute = url.pathname.startsWith('/dashboard')
     const isLoginRoute = url.pathname.startsWith('/login')
     const isRootRoute = url.pathname === '/'
+    const isMobileRoute = /^\/(home|pops|alerts|profile|shift|resident|execution|incidents)(\/.*)?$/.test(url.pathname)
     const canAccessDashboard = role === 'admin' || role === 'supervisor'
 
     // Authenticated user on login page — redirect to their home
@@ -84,6 +85,12 @@ export async function middleware(req: NextRequest) {
     // Root "/" — redirect to appropriate home
     if (isRootRoute) {
       url.pathname = canAccessDashboard ? '/dashboard' : '/home'
+      return NextResponse.redirect(url)
+    }
+
+    // Admin/supervisor landing on a mobile route (e.g. PWA reopened via start_url) — redirect to dashboard
+    if (isMobileRoute && canAccessDashboard) {
+      url.pathname = '/dashboard'
       return NextResponse.redirect(url)
     }
 

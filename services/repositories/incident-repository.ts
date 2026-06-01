@@ -65,8 +65,9 @@ export class IncidentRepository {
     const updates: Record<string, string> = { status }
     if (status === 'resolved') updates.resolved_at = new Date().toISOString()
 
-    const { error } = await this.supabase.from('incidents').update(updates).eq('id', id)
+    const { data, error } = await this.supabase.from('incidents').update(updates).eq('id', id).select('id')
     if (error) throw new Error(`Falha ao atualizar status: ${error.message} (${error.code})`)
+    if (!data || data.length === 0) throw new Error('Sem permissão para atualizar esta intercorrência. Verifique sua sessão.')
   }
 
   async update(id: string, dto: Partial<CreateIncidentDTO>): Promise<Incident> {
@@ -82,8 +83,9 @@ export class IncidentRepository {
   }
 
   async delete(id: string): Promise<void> {
-    const { error } = await this.supabase.from('incidents').delete().eq('id', id)
+    const { data, error } = await this.supabase.from('incidents').delete().eq('id', id).select('id')
     if (error) throw new Error(`Falha ao excluir intercorrência: ${error.message} (${error.code})`)
+    if (!data || data.length === 0) throw new Error('Sem permissão para excluir esta intercorrência. Verifique sua sessão.')
   }
 }
 

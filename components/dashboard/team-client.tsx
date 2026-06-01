@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { UserProfile } from '@/types'
 import { SectionHeader, Card, Badge, Btn, Divider } from './ui'
 import { UserModal } from './modals/invite-user-modal'
@@ -37,6 +38,7 @@ function initials(name: string) {
 }
 
 export function TeamClient({ users: initialUsers }: { users: UserProfile[] }) {
+  const router = useRouter()
   const [users, setUsers] = useState(initialUsers)
   const [showModal, setShowModal] = useState(false)
   const [editingUser, setEditingUser] = useState<UserProfile | undefined>(undefined)
@@ -50,6 +52,7 @@ export function TeamClient({ users: initialUsers }: { users: UserProfile[] }) {
     setShowModal(false)
     const fresh = await userRepository.findAll().catch(() => users)
     setUsers(fresh)
+    router.refresh()
   }
 
   const handleDeactivate = async (id: string) => {
@@ -57,6 +60,7 @@ export function TeamClient({ users: initialUsers }: { users: UserProfile[] }) {
     try {
       await userRepository.deactivate(id)
       setUsers(prev => prev.filter(u => u.id !== id))
+      router.refresh()
     } finally {
       setDeactivatingId(null)
     }

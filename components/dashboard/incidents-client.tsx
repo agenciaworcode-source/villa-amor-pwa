@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { Resident } from '@/types'
 import { SectionHeader, Card, Btn, EmptyState } from './ui'
 import { Incident, IncidentStatus, incidentRepository } from '@/services/repositories/incident-repository'
@@ -38,6 +39,7 @@ const STATUS_STYLE: Record<string, { bg: string; color: string }> = {
 }
 
 export function IncidentsClient({ incidents: initialIncidents, residents }: { incidents: Incident[]; residents: Resident[] }) {
+  const router = useRouter()
   const [filter, setFilter] = useState('all')
   const [expanded, setExpanded] = useState<string | null>(null)
   const { user } = useAuthStore()
@@ -74,11 +76,13 @@ export function IncidentsClient({ incidents: initialIncidents, residents }: { in
         : [incident, ...prev]
     })
     setShowModal(false)
+    router.refresh()
   }
 
   const handleDeleted = (id: string) => {
     setList(prev => prev.filter(i => i.id !== id))
     setShowModal(false)
+    router.refresh()
   }
 
   const filters = [

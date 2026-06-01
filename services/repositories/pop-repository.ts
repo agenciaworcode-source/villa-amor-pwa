@@ -108,8 +108,9 @@ export class SupabasePOPRepository implements IPOPRepository {
   }
 
   async toggleActive(id: string, active: boolean): Promise<void> {
-    const { error } = await this.supabase.from('pops').update({ active }).eq('id', id)
+    const { data, error } = await this.supabase.from('pops').update({ active }).eq('id', id).select('id')
     if (error) throw new Error(`Falha ao alterar status do protocolo: ${error.message} (${error.code})`)
+    if (!data || data.length === 0) throw new Error('Sem permissão para alterar este protocolo. Verifique sua sessão.')
   }
 
   async createBlock(dto: CreateBlockDTO): Promise<POPBlock> {
@@ -124,13 +125,15 @@ export class SupabasePOPRepository implements IPOPRepository {
   }
 
   async updateBlock(id: string, dto: Partial<CreateBlockDTO>): Promise<void> {
-    const { error } = await this.supabase.from('pop_blocks').update(dto).eq('id', id)
+    const { data, error } = await this.supabase.from('pop_blocks').update(dto).eq('id', id).select('id')
     if (error) throw new Error(`Falha ao atualizar bloco: ${error.message} (${error.code})`)
+    if (!data || data.length === 0) throw new Error('Sem permissão para atualizar este bloco. Verifique sua sessão.')
   }
 
   async deleteBlock(id: string): Promise<void> {
-    const { error } = await this.supabase.from('pop_blocks').delete().eq('id', id)
+    const { data, error } = await this.supabase.from('pop_blocks').delete().eq('id', id).select('id')
     if (error) throw new Error(`Falha ao deletar bloco: ${error.message} (${error.code})`)
+    if (!data || data.length === 0) throw new Error('Sem permissão para deletar este bloco. Verifique sua sessão.')
   }
 
   async createStep(dto: CreateStepDTO): Promise<POPStep> {
@@ -145,18 +148,21 @@ export class SupabasePOPRepository implements IPOPRepository {
   }
 
   async updateStep(id: string, dto: Partial<CreateStepDTO>): Promise<void> {
-    const { error } = await this.supabase.from('pop_steps').update(dto).eq('id', id)
+    const { data, error } = await this.supabase.from('pop_steps').update(dto).eq('id', id).select('id')
     if (error) throw new Error(`Falha ao atualizar passo: ${error.message} (${error.code})`)
+    if (!data || data.length === 0) throw new Error('Sem permissão para atualizar este passo. Verifique sua sessão.')
   }
 
   async deleteStep(id: string): Promise<void> {
-    const { error } = await this.supabase.from('pop_steps').delete().eq('id', id)
+    const { data, error } = await this.supabase.from('pop_steps').delete().eq('id', id).select('id')
     if (error) throw new Error(`Falha ao deletar passo: ${error.message} (${error.code})`)
+    if (!data || data.length === 0) throw new Error('Sem permissão para deletar este passo. Verifique sua sessão.')
   }
 
   async delete(id: string): Promise<void> {
-    const { error } = await this.supabase.from('pops').delete().eq('id', id)
+    const { data, error } = await this.supabase.from('pops').delete().eq('id', id).select('id')
     if (error) throw new Error(`Falha ao excluir protocolo: ${error.message} (${error.code})`)
+    if (!data || data.length === 0) throw new Error('Sem permissão para excluir este protocolo. Verifique sua sessão.')
   }
 
   // ── Atribuição de residentes ────────────────────────────────────────────────

@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/store/auth-store'
 import { supabase } from '@/utils/supabase/client'
+import { PushToggle } from '@/components/mobile/push-toggle'
 
 const ROLE_LABELS: Record<string, string> = {
   admin:             'Administrador',
@@ -66,6 +67,9 @@ export default function ProfilePage() {
             <span className="text-sm font-bold text-dark-800">{ROLE_LABELS[role] ?? '—'}</span>
           </div>
         </div>
+
+        {/* Notificações push */}
+        <PushToggle />
 
         {/* Sign out */}
         <button

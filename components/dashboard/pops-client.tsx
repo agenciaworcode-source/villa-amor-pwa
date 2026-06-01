@@ -53,11 +53,13 @@ export function POPsClient({ pops: initialPOPs }: { pops: POP[] }) {
       return exists ? prev.map(p => p.id === saved.id ? saved : p) : [saved, ...prev]
     })
     setShowModal(false)
+    router.refresh()
   }
 
   const handleDeleted = (id: string) => {
     setPOPs(prev => prev.filter(p => p.id !== id))
     setShowModal(false)
+    router.refresh()
   }
 
   const handleToggle = async (pop: POP) => {
@@ -65,6 +67,7 @@ export function POPsClient({ pops: initialPOPs }: { pops: POP[] }) {
     try {
       await popRepository.toggleActive(pop.id, !pop.active)
       setPOPs(prev => prev.map(p => p.id === pop.id ? { ...p, active: !p.active } : p))
+      router.refresh()
     } finally {
       setTogglingId(null)
     }

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { Resident } from '@/types'
 import { SectionHeader, Card, Badge, StatusBadge, ProgressBar, Avatar, Btn, EmptyState, Divider } from './ui'
 import { ResidentModal } from './modals/resident-modal'
@@ -70,6 +71,7 @@ function ResidentDetailModal({ resident, onClose, onEdit }: { resident: Resident
 }
 
 export function ResidentsClient({ residents: initialResidents }: { residents: Resident[] }) {
+  const router = useRouter()
   const [residents, setResidents] = useState(initialResidents)
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState('all')
@@ -87,11 +89,13 @@ export function ResidentsClient({ residents: initialResidents }: { residents: Re
       return exists ? prev.map(r => r.id === saved.id ? saved : r) : [saved, ...prev]
     })
     setShowModal(false)
+    router.refresh()
   }
 
   const handleDeleted = (id: string) => {
     setResidents(prev => prev.filter(r => r.id !== id))
     setShowModal(false)
+    router.refresh()
   }
 
   const filters = [

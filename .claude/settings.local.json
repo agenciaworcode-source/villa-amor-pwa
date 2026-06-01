@@ -2,7 +2,10 @@
   "permissions": {
     "allow": [
       "Bash(cat \"/c/Users/alexa/Desktop/base-appvilla/store/\"*.ts)",
-      "Bash(xargs grep *)"
+      "Bash(xargs grep *)",
+      "Bash(vercel --prod)",
+      "Bash(where vercel *)",
+      "Bash(npx vercel *)"
     ]
   }
 }
