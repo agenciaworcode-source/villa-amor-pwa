@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cat \"/c/Users/alexa/Desktop/base-appvilla/store/\"*.ts)",
+      "Bash(xargs grep *)"
+    ]
+  }
+}
