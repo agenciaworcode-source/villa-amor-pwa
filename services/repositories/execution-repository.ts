@@ -5,6 +5,8 @@ import { Execution, ExecutionStep, MediaFile } from '@/types'
 export interface IExecutionRepository {
   create(execution: Partial<Execution>): Promise<Execution>
   findById(id: string): Promise<Execution | null>
+  findTodayExecution(popId: string, residentId: string, userId: string): Promise<Execution | null>
+  findTodayExecutionsByUser(userId: string): Promise<Pick<Execution, 'id' | 'pop_id' | 'resident_id' | 'status'>[]>
   updateStatus(id: string, status: string): Promise<void>
   addStep(step: Partial<ExecutionStep>): Promise<ExecutionStep>
   updateStep(id: string, updates: Partial<ExecutionStep>): Promise<void>
@@ -38,6 +40,40 @@ export class SupabaseExecutionRepository implements IExecutionRepository {
 
     if (error) return null
     return data as Execution
+  }
+
+  async findTodayExecution(popId: string, residentId: string, userId: string): Promise<Execution | null> {
+    // midnight UTC today
+    const todayStart = new Date()
+    todayStart.setHours(0, 0, 0, 0)
+
+    const { data, error } = await this.supabase
+      .from('executions')
+      .select('*, steps:execution_steps(*, media:media_files(*))')
+      .eq('pop_id', popId)
+      .eq('resident_id', residentId)
+      .eq('user_id', userId)
+      .gte('created_at', todayStart.toISOString())
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (error) return null
+    return data as Execution | null
+  }
+
+  async findTodayExecutionsByUser(userId: string): Promise<Pick<Execution, 'id' | 'pop_id' | 'resident_id' | 'status'>[]> {
+    const todayStart = new Date()
+    todayStart.setHours(0, 0, 0, 0)
+
+    const { data, error } = await this.supabase
+      .from('executions')
+      .select('id, pop_id, resident_id, status')
+      .eq('user_id', userId)
+      .gte('created_at', todayStart.toISOString())
+
+    if (error) return []
+    return (data ?? []) as Pick<Execution, 'id' | 'pop_id' | 'resident_id' | 'status'>[]
   }
 
   async updateStatus(id: string, status: string): Promise<void> {

@@ -1,4 +1,4 @@
-﻿'use client'
+'use client'
 
 import { useEffect, useState, useMemo } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
@@ -20,12 +20,14 @@ export default function ExecutionPage() {
   const { toast } = useUIStore()
 
   const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [resident, setResident] = useState<Resident | null>(null)
   const [pop, setPop] = useState<(POP & { blocks: (POPBlock & { steps: POPStep[] })[] }) | null>(null)
   const [execution, setExecution] = useState<Execution | null>(null)
   const [currentBlockIndex, setCurrentBlockIndex] = useState(0)
   const [currentStepIndex, setCurrentStepIndex] = useState(0)
+  const [completedStepIds, setCompletedStepIds] = useState<Set<string>>(new Set())
   const [showCamera, setShowCamera] = useState(false)
 
   const allSteps = useMemo(() => {
@@ -49,7 +51,7 @@ export default function ExecutionPage() {
       const executionId = params.id as string
       let residentId = searchParams.get('residentId')
       let popId = searchParams.get('popId')
-      
+
       try {
         let currentExec: Execution | null = null
 
@@ -58,22 +60,28 @@ export default function ExecutionPage() {
             router.push('/home')
             return
           }
-          // Criar nova
-          currentExec = await executionRepository.create({
-            pop_id: popId,
-            resident_id: residentId,
-            user_id: user.id,
-            status: 'in_progress'
-          })
 
-          // Avança o rodízio para registrar que este colaborador ficou com este POP hoje
-          try {
-            await popRepository.advanceRotation(popId, user.id)
-          } catch {
-            // Não bloquear o fluxo se o rodízio falhar
+          // Resume today's execution if it already exists
+          const todayExec = await executionRepository.findTodayExecution(popId, residentId, user.id)
+
+          if (todayExec) {
+            currentExec = todayExec
+          } else {
+            // Create a new execution for today
+            currentExec = await executionRepository.create({
+              pop_id: popId,
+              resident_id: residentId,
+              user_id: user.id,
+              status: 'in_progress'
+            })
+
+            try {
+              await popRepository.advanceRotation(popId, user.id)
+            } catch {
+              // Don't block the flow if rotation fails
+            }
           }
         } else {
-          // Carregar existente
           currentExec = await executionRepository.findById(executionId)
           if (!currentExec) {
             router.push('/home')
@@ -97,21 +105,32 @@ export default function ExecutionPage() {
         setPop(popData)
         setExecution(currentExec)
 
-        // Determinar em qual passo estamos (se for retomada)
-        if (executionId !== 'new' && currentExec.steps) {
-            const completedStepIds = new Set(currentExec.steps.map(s => s.pop_step_id))
-            let found = false
-            for (let b = 0; b < popData.blocks.length; b++) {
-                for (let s = 0; s < popData.blocks[b].steps.length; s++) {
-                    if (!completedStepIds.has(popData.blocks[b].steps[s].id)) {
-                        setCurrentBlockIndex(b)
-                        setCurrentStepIndex(s)
-                        found = true
-                        break
-                    }
-                }
-                if (found) break
+        // Build the set of already-completed step IDs
+        const doneIds = new Set<string>(
+          (currentExec.steps ?? []).map(s => s.pop_step_id)
+        )
+        setCompletedStepIds(doneIds)
+
+        // If already fully completed, go home
+        const totalSteps = popData.blocks.flatMap(b => b.steps).length
+        if (currentExec.status === 'completed' || doneIds.size >= totalSteps) {
+          toast('Este protocolo já foi concluído hoje!', 'success')
+          router.push('/home')
+          return
+        }
+
+        // Determine which step to resume from
+        let found = false
+        for (let b = 0; b < popData.blocks.length; b++) {
+          for (let s = 0; s < popData.blocks[b].steps.length; s++) {
+            if (!doneIds.has(popData.blocks[b].steps[s].id)) {
+              setCurrentBlockIndex(b)
+              setCurrentStepIndex(s)
+              found = true
+              break
             }
+          }
+          if (found) break
         }
 
         setLoading(false)
@@ -124,12 +143,55 @@ export default function ExecutionPage() {
     init()
   }, [user, params.id, searchParams, router])
 
+  const recordStep = async (stepId: string): Promise<boolean> => {
+    if (!execution) return false
+    try {
+      await executionRepository.addStep({
+        execution_id: execution.id,
+        pop_step_id: stepId,
+        status: 'completed',
+        completed_at: new Date().toISOString()
+      })
+      setCompletedStepIds(prev => new Set([...prev, stepId]))
+      return true
+    } catch {
+      toast('Erro ao registrar passo. Tente novamente.', 'error')
+      return false
+    }
+  }
+
+  const finishExecution = async () => {
+    await executionRepository.updateStatus(execution!.id, 'completed')
+    toast('Protocolo concluído com sucesso! ✓', 'success')
+    router.push('/home')
+  }
+
+  const nextStep = () => {
+    const currentBlock = pop!.blocks[currentBlockIndex]
+    if (currentStepIndex < currentBlock.steps.length - 1) {
+      setCurrentStepIndex(s => s + 1)
+    } else if (currentBlockIndex < pop!.blocks.length - 1) {
+      setCurrentBlockIndex(b => b + 1)
+      setCurrentStepIndex(0)
+    } else {
+      finishExecution()
+    }
+  }
+
+  const handleCheckboxComplete = async () => {
+    if (!pop || saving) return
+    const currentStep = pop.blocks[currentBlockIndex].steps[currentStepIndex]
+    setSaving(true)
+    const ok = await recordStep(currentStep.id)
+    setSaving(false)
+    if (ok) nextStep()
+  }
+
   const handleCapture = async (blob: Blob) => {
     if (!execution || !pop) return
-    
     setUploading(true)
     const currentStep = pop.blocks[currentBlockIndex].steps[currentStepIndex]
-    
+
     try {
       const path = await storageService.uploadExecutionMedia(
         execution.id,
@@ -151,26 +213,13 @@ export default function ExecutionPage() {
         storage_path: path
       })
 
+      setCompletedStepIds(prev => new Set([...prev, currentStep.id]))
       setShowCamera(false)
       nextStep()
-    } catch (err) {
+    } catch {
       toast('Erro ao salvar evidência. Tente novamente.', 'error')
     } finally {
       setUploading(false)
-    }
-  }
-
-  const nextStep = () => {
-    const currentBlock = pop!.blocks[currentBlockIndex]
-    if (currentStepIndex < currentBlock.steps.length - 1) {
-      setCurrentStepIndex(currentStepIndex + 1)
-    } else if (currentBlockIndex < pop!.blocks.length - 1) {
-      setCurrentBlockIndex(currentBlockIndex + 1)
-      setCurrentStepIndex(0)
-    } else {
-      executionRepository.updateStatus(execution!.id, 'completed')
-      toast('Protocolo concluído com sucesso!', 'success')
-      router.push('/home')
     }
   }
 
@@ -187,6 +236,7 @@ export default function ExecutionPage() {
 
   const currentBlock = pop.blocks[currentBlockIndex]
   const currentStep = currentBlock.steps[currentStepIndex]
+  const isBusy = uploading || saving
 
   return (
     <GeofenceGate>
@@ -197,15 +247,22 @@ export default function ExecutionPage() {
           <h1 className="font-bold text-dark-800 leading-tight line-clamp-1">{resident.name}</h1>
           <p className="text-[10px] text-gold-400 font-bold uppercase tracking-wider">{pop.name}</p>
         </div>
+        <span className="text-xs text-dark-700/50 font-bold tabular-nums">
+          {completedStepIds.size}/{allSteps.length}
+        </span>
       </header>
 
+      {/* Progress bar */}
       <div className="bg-white px-4 py-3 border-b border-cream-100 flex gap-1.5">
-        {allSteps.map((_, i) => (
-          <div 
-            key={i} 
+        {allSteps.map((step, i) => (
+          <div
+            key={i}
             className={`h-1.5 flex-1 rounded-full transition-all duration-500 ${
-              i < currentStepGlobalIndex ? 'bg-gold-400' : 
-              i === currentStepGlobalIndex ? 'bg-gold-300 animate-pulse scale-y-125' : 'bg-cream-200'
+              completedStepIds.has(step.id)
+                ? 'bg-gold-400'
+                : i === currentStepGlobalIndex
+                ? 'bg-gold-300 animate-pulse scale-y-125'
+                : 'bg-cream-200'
             }`}
           />
         ))}
@@ -229,10 +286,12 @@ export default function ExecutionPage() {
         </div>
 
         <div className="w-full max-w-sm aspect-square bg-white rounded-[40px] border-2 border-dashed border-cream-200 flex flex-col items-center justify-center p-8 space-y-4 shadow-sm">
-          {uploading ? (
+          {isBusy ? (
             <div className="flex flex-col items-center gap-4">
               <div className="w-16 h-16 border-4 border-gold-400 border-t-transparent rounded-full animate-spin" />
-              <p className="text-gold-600 font-bold animate-bounce">Processando...</p>
+              <p className="text-gold-600 font-bold animate-bounce">
+                {uploading ? 'Processando...' : 'Salvando...'}
+              </p>
             </div>
           ) : (
             <div className="flex flex-col items-center space-y-6">
@@ -246,8 +305,8 @@ export default function ExecutionPage() {
                   {currentStep.type === 'checkbox' ? 'Tarefa Realizada?' : 'Evidência Necessária'}
                 </p>
                 <p className="text-xs text-dark-700/40 max-w-[200px]">
-                  {currentStep.type === 'checkbox' 
-                    ? 'Confirme que completou esta etapa do protocolo.' 
+                  {currentStep.type === 'checkbox'
+                    ? 'Confirme que completou esta etapa do protocolo.'
                     : 'A câmera será aberta para captura obrigatória.'}
                 </p>
               </div>
@@ -257,19 +316,19 @@ export default function ExecutionPage() {
       </main>
 
       <footer className="p-6 bg-white border-t border-cream-200">
-        <button 
-          disabled={uploading}
+        <button
+          disabled={isBusy}
           className="w-full h-[58px] bg-gold-400 disabled:bg-cream-300 text-white rounded-2xl font-bold text-lg shadow-lg active:scale-95 transition-all flex items-center justify-center gap-3"
           onClick={() => {
             if (currentStep.type === 'checkbox') {
-              nextStep()
+              handleCheckboxComplete()
             } else {
               setShowCamera(true)
             }
           }}
         >
           {currentStep.type === 'checkbox' ? (
-            <>PRÓXIMO PASSO <span className="text-xl">→</span></>
+            <>CONFIRMAR E AVANÇAR <span className="text-xl">→</span></>
           ) : (
             <>ABRIR CÂMERA <span className="text-xl">📷</span></>
           )}
@@ -277,8 +336,8 @@ export default function ExecutionPage() {
       </footer>
 
       {showCamera && (
-        <CameraModal 
-          type={currentStep.type as 'photo' | 'video'} 
+        <CameraModal
+          type={currentStep.type as 'photo' | 'video'}
           onCapture={handleCapture}
           onClose={() => setShowCamera(false)}
         />
