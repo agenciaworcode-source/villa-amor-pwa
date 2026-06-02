@@ -56,15 +56,18 @@ function Toggle({ value, onChange, label }: { value: boolean; onChange: (v: bool
   )
 }
 
-function SaveBtn({ saving, saved, onClick }: { saving: boolean; saved: boolean; onClick: () => void }) {
+function SaveBtn({ saving, saved, error, onClick }: { saving: boolean; saved: boolean; error?: string | null; onClick: () => void }) {
   return (
-    <button
-      disabled={saving}
-      onClick={onClick}
-      style={{ marginTop: 8, padding: '8px 20px', borderRadius: 8, background: saved ? '#22C55E' : '#B8864E', color: 'white', border: 'none', fontSize: 13, fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.7 : 1, transition: 'background 0.3s' }}
-    >
-      {saving ? 'Salvando...' : saved ? '✓ Salvo' : 'Salvar'}
-    </button>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 8 }}>
+      <button
+        disabled={saving}
+        onClick={onClick}
+        style={{ padding: '8px 20px', borderRadius: 8, background: saved ? '#22C55E' : error ? '#EF4444' : '#B8864E', color: 'white', border: 'none', fontSize: 13, fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.7 : 1, transition: 'background 0.3s' }}
+      >
+        {saving ? 'Salvando...' : saved ? '✓ Salvo' : error ? '✗ Erro' : 'Salvar'}
+      </button>
+      {error && <span style={{ fontSize: 12, color: '#EF4444' }}>{error}</span>}
+    </div>
   )
 }
 
@@ -79,15 +82,18 @@ export function SettingsClient({ settings: initial }: { settings: SystemSettings
   const [geoLng,     setGeoLng]     = useState(initial.geofence_lng     ?? '0')
   const [geoRadius,  setGeoRadius]  = useState(initial.geofence_radius_m ?? '100')
   const [geoSaved,   setGeoSaved]   = useState(false)
+  const [geoError,   setGeoError]   = useState<string | null>(null)
 
   function saveGeo() {
+    setGeoError(null)
     startTransition(async () => {
-      await updateSettings({
+      const result = await updateSettings({
         geofence_enabled:  String(geoEnabled),
         geofence_lat:      geoLat,
         geofence_lng:      geoLng,
         geofence_radius_m: geoRadius,
       })
+      if (result.error) { setGeoError(result.error); return }
       setGeoSaved(true)
       setTimeout(() => setGeoSaved(false), 2500)
     })
@@ -97,13 +103,16 @@ export function SettingsClient({ settings: initial }: { settings: SystemSettings
   const [camGallery,  setCamGallery]  = useState(initial.camera_allow_gallery === 'true')
   const [camMaxVideo, setCamMaxVideo] = useState(initial.camera_max_video_seconds ?? '30')
   const [camSaved,    setCamSaved]    = useState(false)
+  const [camError,    setCamError]    = useState<string | null>(null)
 
   function saveCam() {
+    setCamError(null)
     startTransition(async () => {
-      await updateSettings({
+      const result = await updateSettings({
         camera_allow_gallery:     String(camGallery),
         camera_max_video_seconds: camMaxVideo,
       })
+      if (result.error) { setCamError(result.error); return }
       setCamSaved(true)
       setTimeout(() => setCamSaved(false), 2500)
     })
@@ -117,10 +126,12 @@ export function SettingsClient({ settings: initial }: { settings: SystemSettings
   const [nightStart,    setNightStart]    = useState(initial.shift_night_start    ?? '19:00')
   const [nightEnd,      setNightEnd]      = useState(initial.shift_night_end      ?? '07:00')
   const [shiftSaved,    setShiftSaved]    = useState(false)
+  const [shiftError,    setShiftError]    = useState<string | null>(null)
 
   function saveShifts() {
+    setShiftError(null)
     startTransition(async () => {
-      await updateSettings({
+      const result = await updateSettings({
         shift_morning_start: morningStart,
         shift_morning_end:   morningEnd,
         shift_evening_start: eveningStart,
@@ -128,6 +139,7 @@ export function SettingsClient({ settings: initial }: { settings: SystemSettings
         shift_night_start:   nightStart,
         shift_night_end:     nightEnd,
       })
+      if (result.error) { setShiftError(result.error); return }
       setShiftSaved(true)
       setTimeout(() => setShiftSaved(false), 2500)
     })
@@ -171,7 +183,7 @@ export function SettingsClient({ settings: initial }: { settings: SystemSettings
             </div>
           </>
         )}
-        <SaveBtn saving={isPending} saved={geoSaved} onClick={saveGeo} />
+        <SaveBtn saving={isPending} saved={geoSaved} error={geoError} onClick={saveGeo} />
       </Section>
 
       {/* ── Câmera ── */}
@@ -199,7 +211,7 @@ export function SettingsClient({ settings: initial }: { settings: SystemSettings
             ⚠️ Atenção: permitir galeria pode comprometer a autenticidade das evidências registradas.
           </div>
         )}
-        <SaveBtn saving={isPending} saved={camSaved} onClick={saveCam} />
+        <SaveBtn saving={isPending} saved={camSaved} error={camError} onClick={saveCam} />
       </Section>
 
       {/* ── Horários dos Turnos ── */}
@@ -223,7 +235,7 @@ export function SettingsClient({ settings: initial }: { settings: SystemSettings
             </div>
           </div>
         ))}
-        <SaveBtn saving={isPending} saved={shiftSaved} onClick={saveShifts} />
+        <SaveBtn saving={isPending} saved={shiftSaved} error={shiftError} onClick={saveShifts} />
       </Section>
 
       {/* ── Segurança (informativo) ── */}
