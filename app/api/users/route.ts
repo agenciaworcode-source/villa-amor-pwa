@@ -120,13 +120,21 @@ export async function DELETE(req: NextRequest) {
 
     const admin = adminClient()
 
-    // 1. Deleta do Auth
-    const { error: authError } = await admin.auth.admin.deleteUser(id)
-    if (authError) throw new Error(authError.message)
+    // 1. Nullificar referências para preservar histórico e evitar FK violation
+    //    (necessário enquanto as constraints não forem ON DELETE SET NULL no banco)
+    await admin.from('executions').update({ user_id: null }).eq('user_id', id)
+    await admin.from('incidents').update({ reported_by: null }).eq('reported_by', id)
+    await admin.from('alerts').update({ acknowledged_by: null }).eq('acknowledged_by', id)
+    await admin.from('shift_handovers').update({ user_from_id: null }).eq('user_from_id', id)
+    await admin.from('shift_handovers').update({ user_to_id: null }).eq('user_to_id', id)
 
-    // 2. Deleta da tabela users (o cascade deve cuidar disso se configurado, mas garantimos aqui)
+    // 2. Deleta da tabela users
     const { error: dbError } = await admin.from('users').delete().eq('id', id)
     if (dbError) throw new Error(dbError.message)
+
+    // 3. Deleta do Auth (após limpar as dependências)
+    const { error: authError } = await admin.auth.admin.deleteUser(id)
+    if (authError) throw new Error(authError.message)
 
     return NextResponse.json({ success: true })
   } catch (err) {
