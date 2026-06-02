@@ -226,7 +226,8 @@ export default function ExecutionPage() {
         toast('Protocolo concluído com sucesso! ✓', 'success')
         router.push('/home')
       }
-    } catch {
+    } catch (err) {
+      console.error('[handleCapture] erro:', err)
       toast('Erro ao salvar evidência. Tente novamente.', 'error')
     } finally {
       setBusy(false)
