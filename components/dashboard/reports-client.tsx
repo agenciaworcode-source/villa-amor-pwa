@@ -35,6 +35,70 @@ const STATUS_LABELS: Record<string, string> = {
   pending: 'Pendente', incomplete: 'Incompleta',
 }
 
+async function exportToPDF(rows: ResidentReportRow[], period: string, kpis: { label: string; value: string }[]) {
+  const { default: jsPDF } = await import('jspdf')
+  const { default: autoTable } = await import('jspdf-autotable')
+
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' })
+  const today = new Date().toLocaleDateString('pt-BR')
+  const W = doc.internal.pageSize.getWidth()
+
+  // header
+  doc.setFillColor(184, 134, 78)
+  doc.rect(0, 0, W, 18, 'F')
+  doc.setTextColor(255, 255, 255)
+  doc.setFontSize(13)
+  doc.setFont('helvetica', 'bold')
+  doc.text('Villa Amor — Relatório de Conformidade', 14, 11)
+  doc.setFontSize(9)
+  doc.setFont('helvetica', 'normal')
+  doc.text(`Período: últimos ${period} dias · Gerado em ${today}`, W - 14, 11, { align: 'right' })
+
+  // KPI row
+  let x = 14
+  doc.setTextColor(28, 28, 28)
+  kpis.forEach(k => {
+    doc.setFontSize(16)
+    doc.setFont('helvetica', 'bold')
+    doc.text(k.value, x, 32)
+    doc.setFontSize(7)
+    doc.setFont('helvetica', 'normal')
+    doc.setTextColor(156, 142, 128)
+    doc.text(k.label.toUpperCase(), x, 38)
+    doc.setTextColor(28, 28, 28)
+    x += W / 4
+  })
+
+  // separator
+  doc.setDrawColor(237, 224, 200)
+  doc.line(14, 42, W - 14, 42)
+
+  // table
+  autoTable(doc, {
+    startY: 46,
+    head: [['Residente', 'Quarto', 'Execuções', 'Concluídas', 'Atrasadas', 'Incid.', 'Conformidade %']],
+    body: rows.map(r => {
+      const pct = r.total > 0 ? Math.round((r.completed / r.total) * 100) : null
+      return [r.name, r.room_number, r.total, r.completed, r.late, r.incidents, pct !== null ? `${pct}%` : '—']
+    }),
+    headStyles: { fillColor: [184, 134, 78], textColor: 255, fontSize: 8, fontStyle: 'bold' },
+    bodyStyles: { fontSize: 9, textColor: [28, 28, 28] },
+    alternateRowStyles: { fillColor: [253, 250, 245] },
+    columnStyles: {
+      0: { cellWidth: 60 },
+      1: { cellWidth: 20, halign: 'center' },
+      2: { cellWidth: 24, halign: 'center' },
+      3: { cellWidth: 24, halign: 'center' },
+      4: { cellWidth: 24, halign: 'center' },
+      5: { cellWidth: 18, halign: 'center' },
+      6: { cellWidth: 30, halign: 'center' },
+    },
+    margin: { left: 14, right: 14 },
+  })
+
+  doc.save(`relatorio_conformidade_${period}d_${new Date().toISOString().split('T')[0]}.pdf`)
+}
+
 function exportToCSV(rows: ResidentReportRow[], period: string) {
   const headers = ['Residente', 'Quarto', 'Total Execuções', 'Concluídas', 'Conformidade (%)', 'Incidências']
   const data = rows.map(r => [
@@ -171,7 +235,10 @@ export function ReportsClient({ executions, residents, incidents }: Props) {
             <div style={{ fontFamily: 'var(--font-playfair)', fontSize: 16, fontWeight: 700, color: '#1C1C1C' }}>Conformidade por Residente</div>
             <div style={{ fontSize: 11, color: '#9C8E80', marginTop: 2 }}>Ordenado por menor conformidade primeiro</div>
           </div>
-          <Btn variant="secondary" size="sm" onClick={() => exportToCSV(residentRows, period)}>⬇ Exportar CSV</Btn>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <Btn variant="secondary" size="sm" onClick={() => exportToCSV(residentRows, period)}>⬇ CSV</Btn>
+            <Btn variant="secondary" size="sm" onClick={() => exportToPDF(residentRows, period, kpis)}>⬇ PDF</Btn>
+          </div>
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 80px 100px 80px 80px 80px 120px', gap: 12, padding: '10px 20px', borderBottom: '2px solid #F7F0E3', background: '#FDFAF5' }}>

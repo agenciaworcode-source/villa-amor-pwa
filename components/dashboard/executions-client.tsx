@@ -56,6 +56,64 @@ function statusColor(status: string) {
   return '#C4B8A8'
 }
 
+async function exportToPDF(rows: ExecWithDetails[], label: string) {
+  const { default: jsPDF } = await import('jspdf')
+  const { default: autoTable } = await import('jspdf-autotable')
+
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' })
+  const today = new Date().toLocaleDateString('pt-BR')
+  const W = doc.internal.pageSize.getWidth()
+
+  // header
+  doc.setFillColor(28, 28, 28)
+  doc.rect(0, 0, W, 18, 'F')
+  doc.setTextColor(255, 255, 255)
+  doc.setFontSize(13)
+  doc.setFont('helvetica', 'bold')
+  doc.text('Villa Amor — Execuções de POPs', 14, 11)
+  doc.setFontSize(9)
+  doc.setFont('helvetica', 'normal')
+  doc.text(`${label} · Gerado em ${today}`, W - 14, 11, { align: 'right' })
+
+  autoTable(doc, {
+    startY: 24,
+    head: [['POP', 'Residente', 'Quarto', 'Colaborador', 'Início', 'Duração', 'Steps', 'Status']],
+    body: rows.map(e => {
+      const durationMin = e.completed_at && e.started_at
+        ? `${Math.round((new Date(e.completed_at).getTime() - new Date(e.started_at).getTime()) / 60000)} min`
+        : '—'
+      const total = e.steps?.length ?? 0
+      const done  = e.steps?.filter(s => s.status === 'completed').length ?? 0
+      return [
+        e.pop?.name ?? '—',
+        e.resident?.name ?? '—',
+        e.resident?.room_number ?? '—',
+        e.user?.name ?? '—',
+        e.started_at ? new Date(e.started_at).toLocaleString('pt-BR') : '—',
+        durationMin,
+        total > 0 ? `${done}/${total}` : '—',
+        STATUS_LABELS[e.status] ?? e.status,
+      ]
+    }),
+    headStyles: { fillColor: [28, 28, 28], textColor: 255, fontSize: 8, fontStyle: 'bold' },
+    bodyStyles: { fontSize: 8, textColor: [28, 28, 28] },
+    alternateRowStyles: { fillColor: [253, 250, 245] },
+    columnStyles: {
+      0: { cellWidth: 50 },
+      1: { cellWidth: 45 },
+      2: { cellWidth: 18, halign: 'center' },
+      3: { cellWidth: 40 },
+      4: { cellWidth: 36 },
+      5: { cellWidth: 20, halign: 'center' },
+      6: { cellWidth: 18, halign: 'center' },
+      7: { cellWidth: 26, halign: 'center' },
+    },
+    margin: { left: 14, right: 14 },
+  })
+
+  doc.save(`execucoes_${new Date().toISOString().split('T')[0]}.pdf`)
+}
+
 function exportToCSV(rows: ExecWithDetails[]) {
   const headers = ['POP', 'Residente', 'Quarto', 'Colaborador', 'Início', 'Conclusão', 'Duração (min)', 'Status']
   const data = rows.map(e => {
@@ -349,7 +407,12 @@ export function ExecutionsClient({ executions: initial }: { executions: ExecWith
           eyebrow="Turno Ativo · Hoje"
           title="Execuções de POP"
           sub="Histórico completo de execuções e evidências do turno"
-          action={<Btn variant="secondary" size="sm" onClick={() => exportToCSV(userExecs)}>⬇ Exportar CSV</Btn>}
+          action={
+            <div style={{ display: 'flex', gap: 8 }}>
+              <Btn variant="secondary" size="sm" onClick={() => exportToCSV(userExecs)}>⬇ CSV</Btn>
+              <Btn variant="secondary" size="sm" onClick={() => exportToPDF(userExecs, selectedUser.name)}>⬇ PDF</Btn>
+            </div>
+          }
         />
 
         {/* cabeçalho do colaborador */}
@@ -397,7 +460,12 @@ export function ExecutionsClient({ executions: initial }: { executions: ExecWith
         eyebrow="Turno Ativo · Hoje"
         title="Execuções de POP"
         sub="Selecione um colaborador para ver os detalhes"
-        action={<Btn variant="secondary" size="sm" onClick={() => exportToCSV(executions)}>⬇ Exportar CSV</Btn>}
+        action={
+          <div style={{ display: 'flex', gap: 8 }}>
+            <Btn variant="secondary" size="sm" onClick={() => exportToCSV(executions)}>⬇ CSV</Btn>
+            <Btn variant="secondary" size="sm" onClick={() => exportToPDF(executions, 'Todas as execuções')}>⬇ PDF</Btn>
+          </div>
+        }
       />
 
       {collaborators.length === 0 ? (
