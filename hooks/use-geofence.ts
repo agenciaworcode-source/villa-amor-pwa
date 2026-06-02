@@ -32,6 +32,7 @@ export function useGeofence(): GeofenceResult {
     async function run() {
       // Busca configurações do banco via API route
       let lat = 0, lng = 0, radius = 100, enabled = true
+      let apiOk = false
       try {
         const res = await fetch('/api/settings')
         if (res.ok) {
@@ -40,9 +41,10 @@ export function useGeofence(): GeofenceResult {
           lng     = Number(cfg.geofence_lng)
           radius  = Number(cfg.geofence_radius_m)
           enabled = cfg.geofence_enabled === 'true'
+          apiOk   = true
         }
       } catch {
-        // fallback para env vars se API falhar
+        // fallback para env vars
         lat     = Number(process.env.NEXT_PUBLIC_GEOFENCE_LAT ?? '0')
         lng     = Number(process.env.NEXT_PUBLIC_GEOFENCE_LNG ?? '0')
         radius  = Number(process.env.NEXT_PUBLIC_GEOFENCE_RADIUS ?? '100')
@@ -51,8 +53,21 @@ export function useGeofence(): GeofenceResult {
       if (cancelled) return
       setRadiusM(radius)
 
-      if (!enabled || (!lat && !lng)) {
+      // Desativa só se explicitamente configurado como desabilitado
+      // ou se não há coordenadas E a API retornou ok (intencionalmente sem config)
+      if (!enabled) {
         setStatus('disabled')
+        return
+      }
+
+      // Sem coordenadas: só desativa se a API respondeu (admin não configurou ainda)
+      // Se a API falhou, bloqueia por segurança
+      if (!lat && !lng) {
+        if (apiOk) {
+          setStatus('disabled') // admin não configurou coordenadas ainda
+        } else {
+          setStatus('error') // API falhou — bloqueia por segurança
+        }
         return
       }
 
