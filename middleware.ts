@@ -30,9 +30,12 @@ export async function middleware(req: NextRequest) {
     }
   )
 
+  // getSession() lê o cookie local sem round-trip de rede (muito mais rápido que getUser)
+  // RLS do Supabase continua protegendo os dados — o middleware só decide roteamento
   const {
-    data: { user },
-  } = await supabase.auth.getUser()
+    data: { session },
+  } = await supabase.auth.getSession()
+  const user = session?.user ?? null
 
   const url = req.nextUrl.clone()
 

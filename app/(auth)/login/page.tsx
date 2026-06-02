@@ -19,15 +19,24 @@ export default function LoginPage() {
     setError(null);
 
     try {
-      const { error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) throw error;
 
-      router.push("/");
-      router.refresh();
+      // Tenta obter role do JWT metadata (sem chamada extra ao banco)
+      let role = data.user?.user_metadata?.role as string | undefined;
+
+      // Fallback: busca no banco apenas se metadata não tiver role
+      if (!role && data.user) {
+        const { data: profile } = await supabase
+          .from("users")
+          .select("role")
+          .eq("id", data.user.id)
+          .single();
+        role = profile?.role as string | undefined;
+      }
+
+      // Navega direto ao destino — sem passar pelo "/" e sem router.refresh()
+      router.push(role === "admin" ? "/dashboard" : "/home");
     } catch (err: unknown) {
       if (err instanceof Error) {
         setError(err.message || "Falha ao realizar login");
