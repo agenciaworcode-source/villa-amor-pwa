@@ -30,16 +30,20 @@ ALTER TABLE alerts
   ADD CONSTRAINT alerts_acknowledged_by_fkey
   FOREIGN KEY (acknowledged_by) REFERENCES users(id) ON DELETE SET NULL;
 
--- shift_handovers.user_from_id → users(id)
-ALTER TABLE shift_handovers
-  DROP CONSTRAINT IF EXISTS shift_handovers_user_from_id_fkey;
-ALTER TABLE shift_handovers
-  ADD CONSTRAINT shift_handovers_user_from_id_fkey
-  FOREIGN KEY (user_from_id) REFERENCES users(id) ON DELETE SET NULL;
+-- shift_handovers (só executa se a tabela já existir no banco)
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'shift_handovers') THEN
+    ALTER TABLE shift_handovers
+      DROP CONSTRAINT IF EXISTS shift_handovers_user_from_id_fkey;
+    ALTER TABLE shift_handovers
+      ADD CONSTRAINT shift_handovers_user_from_id_fkey
+      FOREIGN KEY (user_from_id) REFERENCES users(id) ON DELETE SET NULL;
 
--- shift_handovers.user_to_id → users(id)
-ALTER TABLE shift_handovers
-  DROP CONSTRAINT IF EXISTS shift_handovers_user_to_id_fkey;
-ALTER TABLE shift_handovers
-  ADD CONSTRAINT shift_handovers_user_to_id_fkey
-  FOREIGN KEY (user_to_id) REFERENCES users(id) ON DELETE SET NULL;
+    ALTER TABLE shift_handovers
+      DROP CONSTRAINT IF EXISTS shift_handovers_user_to_id_fkey;
+    ALTER TABLE shift_handovers
+      ADD CONSTRAINT shift_handovers_user_to_id_fkey
+      FOREIGN KEY (user_to_id) REFERENCES users(id) ON DELETE SET NULL;
+  END IF;
+END $$;
