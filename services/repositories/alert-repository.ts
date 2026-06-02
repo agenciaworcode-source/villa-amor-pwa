@@ -48,10 +48,11 @@ export class AlertRepository {
 
   async createStepLateAlert(
     executionId: string,
-    residentId: string,
+    residentId: string | null,
     popName: string,
-    residentName: string
+    residentName?: string
   ): Promise<void> {
+    if (!residentId) return // POPs sem residente não geram alerta de step_late
     const { error } = await this.supabase
       .from('alerts')
       .insert({
@@ -59,7 +60,7 @@ export class AlertRepository {
         execution_id: executionId,
         resident_id: residentId,
         severity: 'high',
-        message: `Execução atrasada: ${popName} — ${residentName}`,
+        message: `Execução atrasada: ${popName} — ${residentName ?? ''}`,
         triggered_at: new Date().toISOString()
       })
 
@@ -67,17 +68,18 @@ export class AlertRepository {
   }
 
   async createPOPNotStartedAlert(
-    residentId: string,
+    residentId: string | null,
     popName: string,
-    residentName: string
+    residentName?: string
   ): Promise<void> {
+    if (!residentId) return // POPs sem residente não geram alerta de pop_not_started
     const { error } = await this.supabase
       .from('alerts')
       .insert({
         type: 'pop_not_started',
         resident_id: residentId,
         severity: 'high',
-        message: `POP não iniciado: ${popName} — ${residentName}`,
+        message: `POP não iniciado: ${popName} — ${residentName ?? ''}`,
         triggered_at: new Date().toISOString()
       })
 
