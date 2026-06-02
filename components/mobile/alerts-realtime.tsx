@@ -23,7 +23,23 @@ type AlertRow = {
   isNew?: boolean
 }
 
-export function AlertsRealtime({ initial }: { initial: AlertRow[] }) {
+const PRIVILEGED_ROLES = ['admin', 'supervisor']
+
+function matchesRole(alert: AlertRow & { pop?: { role_type: string } | null }, userRole: string | null, isPrivileged: boolean): boolean {
+  if (isPrivileged) return true
+  if (alert.type === 'checkout_missing' || alert.type === 'incident') return true
+  return (alert as any).pop?.role_type === userRole
+}
+
+export function AlertsRealtime({
+  initial,
+  userRole = null,
+  isPrivileged = false,
+}: {
+  initial: AlertRow[]
+  userRole?: string | null
+  isPrivileged?: boolean
+}) {
   const [alerts, setAlerts] = useState<AlertRow[]>(initial)
 
   useEffect(() => {
@@ -39,17 +55,23 @@ export function AlertsRealtime({ initial }: { initial: AlertRow[] }) {
           table: 'alerts',
         },
         async (payload) => {
-          const newAlert = payload.new as AlertRow
+          const newAlert = payload.new as AlertRow & { pop?: { role_type: string } | null }
 
-          // Fetch resident name for the new alert
-          if (newAlert.resident_id) {
-            const { data } = await supabase
-              .from('residents')
-              .select('name, room_number')
-              .eq('id', newAlert.resident_id)
-              .single()
-            newAlert.resident = data ?? null
-          }
+          // Busca nome do residente e role_type do POP para o novo alerta
+          const [residentResult, popResult] = await Promise.all([
+            newAlert.resident_id
+              ? supabase.from('residents').select('name, room_number').eq('id', newAlert.resident_id).single()
+              : Promise.resolve({ data: null }),
+            (newAlert as any).pop_id
+              ? supabase.from('pops').select('role_type').eq('id', (newAlert as any).pop_id).single()
+              : Promise.resolve({ data: null }),
+          ])
+
+          newAlert.resident = residentResult.data ?? null
+          newAlert.pop      = popResult.data ?? null
+
+          // Filtra pelo role do usuário antes de exibir
+          if (!matchesRole(newAlert, userRole, isPrivileged)) return
 
           newAlert.isNew = true
           setAlerts(prev => [newAlert, ...prev])
