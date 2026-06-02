@@ -6,7 +6,7 @@ import { SectionHeader, Card, StatusBadge, Btn, EmptyState } from './ui'
 import { Execution, Resident, POP, ExecutionStep } from '@/types'
 
 type StepSummary = Pick<ExecutionStep, 'id' | 'status' | 'completed_at'>
-type ExecWithDetails = Execution & {
+type ExecWithDetails = Omit<Execution, 'steps'> & {
   resident: Resident
   pop: POP
   user: { id: string; name: string } | null
