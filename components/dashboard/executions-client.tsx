@@ -3,9 +3,15 @@
 import { useState, useEffect } from 'react'
 import { createClient } from '@/utils/supabase/client'
 import { SectionHeader, Card, StatusBadge, Btn, EmptyState } from './ui'
-import { Execution, Resident, POP } from '@/types'
+import { Execution, Resident, POP, ExecutionStep } from '@/types'
 
-type ExecWithDetails = Execution & { resident: Resident; pop: POP; user: { id: string; name: string } | null }
+type StepSummary = Pick<ExecutionStep, 'id' | 'status' | 'completed_at'>
+type ExecWithDetails = Execution & {
+  resident: Resident
+  pop: POP
+  user: { id: string; name: string } | null
+  steps?: StepSummary[] | null
+}
 
 const FILTERS = [
   { id: 'all',         label: 'Todas' },
@@ -53,11 +59,12 @@ export function ExecutionsClient({ executions: initial }: { executions: ExecWith
   const [executions, setExecutions] = useState<ExecWithDetails[]>(initial)
   const [filter, setFilter]         = useState('all')
 
-  // Realtime: atualiza status e completed_at quando colaborador conclui/inicia
+  // Realtime: atualiza execuções e steps quando colaborador avança tarefas
   useEffect(() => {
     const supabase = createClient()
     const channel = supabase
       .channel('executions-dashboard')
+      // Execution atualizada (status, completed_at)
       .on(
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'executions' },
@@ -72,19 +79,50 @@ export function ExecutionsClient({ executions: initial }: { executions: ExecWith
           )
         }
       )
+      // Nova execução criada — busca com todos os detalhes
       .on(
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'executions' },
         async (payload) => {
           const newExec = payload.new as Execution
-          // Busca detalhes (residente, pop, usuário) para exibir na tabela
           const supabase2 = createClient()
           const { data } = await supabase2
             .from('executions')
-            .select('*, resident:residents(*), pop:pops(*), user:users(id, name)')
+            .select('*, resident:residents(*), pop:pops(*), user:users(id, name), steps:execution_steps(id, status, completed_at)')
             .eq('id', newExec.id)
             .single()
           if (data) setExecutions(prev => [data as ExecWithDetails, ...prev])
+        }
+      )
+      // Step atualizado (check-in / check-out de etapa) — atualiza progresso
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'execution_steps' },
+        (payload) => {
+          const step = payload.new as StepSummary & { execution_id: string }
+          setExecutions(prev =>
+            prev.map(e => {
+              if (e.id !== step.execution_id) return e
+              const updatedSteps = (e.steps ?? []).map(s =>
+                s.id === step.id ? { ...s, status: step.status, completed_at: step.completed_at } : s
+              )
+              return { ...e, steps: updatedSteps }
+            })
+          )
+        }
+      )
+      // Novo step inserido — adiciona ao array de steps da execução
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'execution_steps' },
+        (payload) => {
+          const step = payload.new as StepSummary & { execution_id: string }
+          setExecutions(prev =>
+            prev.map(e => {
+              if (e.id !== step.execution_id) return e
+              return { ...e, steps: [...(e.steps ?? []), step] }
+            })
+          )
         }
       )
       .subscribe()
@@ -117,8 +155,8 @@ export function ExecutionsClient({ executions: initial }: { executions: ExecWith
 
       <Card>
         {/* Header da tabela */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 100px 100px 90px', gap: 12, padding: '10px 20px', borderBottom: '2px solid #F7F0E3', background: '#FDFAF5', borderRadius: '12px 12px 0 0' }}>
-          {['POP', 'Residente', 'Colaborador', 'Início', 'Duração', 'Status'].map(h => (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 100px 80px 70px 90px', gap: 12, padding: '10px 20px', borderBottom: '2px solid #F7F0E3', background: '#FDFAF5', borderRadius: '12px 12px 0 0' }}>
+          {['POP', 'Residente', 'Colaborador', 'Início', 'Duração', 'Etapas', 'Status'].map(h => (
             <span key={h} style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1.2px', color: '#9C8E80' }}>{h}</span>
           ))}
         </div>
@@ -130,10 +168,14 @@ export function ExecutionsClient({ executions: initial }: { executions: ExecWith
           const duration = e.completed_at && e.started_at
             ? `${Math.round((new Date(e.completed_at).getTime() - new Date(e.started_at).getTime()) / 60000)} min`
             : '—'
+          const totalSteps     = e.steps?.length ?? 0
+          const completedSteps = e.steps?.filter(s => s.status === 'completed').length ?? 0
+          const stepLabel      = totalSteps > 0 ? `${completedSteps}/${totalSteps}` : '—'
+          const stepColor      = totalSteps === 0 ? '#9C8E80' : completedSteps === totalSteps ? '#22C55E' : completedSteps > 0 ? '#B8864E' : '#9C8E80'
           return (
             <div
               key={e.id}
-              style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 100px 100px 90px', gap: 12, padding: '13px 20px', borderBottom: i < filtered.length - 1 ? '1px solid #F7F0E3' : 'none', alignItems: 'center', cursor: 'pointer' }}
+              style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 100px 80px 70px 90px', gap: 12, padding: '13px 20px', borderBottom: i < filtered.length - 1 ? '1px solid #F7F0E3' : 'none', alignItems: 'center', cursor: 'pointer' }}
             >
               <span style={{ fontSize: 13, fontWeight: 700, color: '#1C1C1C' }}>{e.pop?.name ?? '—'}</span>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -147,6 +189,7 @@ export function ExecutionsClient({ executions: initial }: { executions: ExecWith
                 {e.started_at ? new Date(e.started_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '—'}
               </span>
               <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: '#9C8E80' }}>{duration}</span>
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, fontWeight: 700, color: stepColor }}>{stepLabel}</span>
               <StatusBadge status={e.status} />
             </div>
           )
