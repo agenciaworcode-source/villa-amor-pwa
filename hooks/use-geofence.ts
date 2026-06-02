@@ -2,10 +2,6 @@
 
 import { useState, useEffect } from 'react'
 
-const TARGET_LAT = Number(process.env.NEXT_PUBLIC_GEOFENCE_LAT ?? '0')
-const TARGET_LNG = Number(process.env.NEXT_PUBLIC_GEOFENCE_LNG ?? '0')
-const RADIUS_M = Number(process.env.NEXT_PUBLIC_GEOFENCE_RADIUS ?? '100')
-
 function haversineMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R = 6_371_000
   const toRad = (deg: number) => (deg * Math.PI) / 180
@@ -26,31 +22,60 @@ export interface GeofenceResult {
 }
 
 export function useGeofence(): GeofenceResult {
-  const [status, setStatus] = useState<GeofenceStatus>('checking')
+  const [status, setStatus]     = useState<GeofenceStatus>('checking')
   const [distanceM, setDistanceM] = useState<number | null>(null)
+  const [radiusM, setRadiusM]   = useState(100)
 
   useEffect(() => {
-    // Skip check when no coordinates are configured (local dev without env vars)
-    if (!TARGET_LAT || !TARGET_LNG) {
-      setStatus('disabled')
-      return
+    let cancelled = false
+
+    async function run() {
+      // Busca configurações do banco via API route
+      let lat = 0, lng = 0, radius = 100, enabled = true
+      try {
+        const res = await fetch('/api/settings')
+        if (res.ok) {
+          const cfg = await res.json()
+          lat     = Number(cfg.geofence_lat)
+          lng     = Number(cfg.geofence_lng)
+          radius  = Number(cfg.geofence_radius_m)
+          enabled = cfg.geofence_enabled === 'true'
+        }
+      } catch {
+        // fallback para env vars se API falhar
+        lat     = Number(process.env.NEXT_PUBLIC_GEOFENCE_LAT ?? '0')
+        lng     = Number(process.env.NEXT_PUBLIC_GEOFENCE_LNG ?? '0')
+        radius  = Number(process.env.NEXT_PUBLIC_GEOFENCE_RADIUS ?? '100')
+      }
+
+      if (cancelled) return
+      setRadiusM(radius)
+
+      if (!enabled || (!lat && !lng)) {
+        setStatus('disabled')
+        return
+      }
+
+      if (!navigator?.geolocation) {
+        setStatus('error')
+        return
+      }
+
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          if (cancelled) return
+          const dist = haversineMeters(pos.coords.latitude, pos.coords.longitude, lat, lng)
+          setDistanceM(Math.round(dist))
+          setStatus(dist <= radius ? 'inside' : 'outside')
+        },
+        () => { if (!cancelled) setStatus('error') },
+        { timeout: 10_000, enableHighAccuracy: true, maximumAge: 30_000 },
+      )
     }
 
-    if (!navigator?.geolocation) {
-      setStatus('error')
-      return
-    }
-
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        const dist = haversineMeters(pos.coords.latitude, pos.coords.longitude, TARGET_LAT, TARGET_LNG)
-        setDistanceM(Math.round(dist))
-        setStatus(dist <= RADIUS_M ? 'inside' : 'outside')
-      },
-      () => setStatus('error'),
-      { timeout: 10_000, enableHighAccuracy: true, maximumAge: 30_000 },
-    )
+    run()
+    return () => { cancelled = true }
   }, [])
 
-  return { status, distanceM, radiusM: RADIUS_M }
+  return { status, distanceM, radiusM }
 }

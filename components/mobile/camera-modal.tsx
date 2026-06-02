@@ -11,12 +11,28 @@ interface CameraProps {
 
 export const CameraModal = ({ onCapture, onClose, type }: CameraProps) => {
   const videoRef    = useRef<HTMLVideoElement>(null)
-  const [stream, setStream]         = useState<MediaStream | null>(null)
+  const [stream, setStream]           = useState<MediaStream | null>(null)
   const [isRecording, setIsRecording] = useState(false)
+  const [maxVideoSec, setMaxVideoSec] = useState(30)
+  const [allowGallery, setAllowGallery] = useState(false)
+  const [countdown, setCountdown]     = useState<number | null>(null)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const chunksRef        = useRef<Blob[]>([])
   const mimeTypeRef      = useRef<string>('')
+  const countdownRef     = useRef<ReturnType<typeof setInterval> | null>(null)
   const { toast } = useUIStore()
+
+  // Carrega configurações de câmera do banco
+  useEffect(() => {
+    fetch('/api/settings')
+      .then(r => r.ok ? r.json() : null)
+      .then(cfg => {
+        if (!cfg) return
+        setMaxVideoSec(Number(cfg.camera_max_video_seconds) || 30)
+        setAllowGallery(cfg.camera_allow_gallery === 'true')
+      })
+      .catch(() => {})
+  }, [])
 
   const startCamera = async () => {
     try {
@@ -81,15 +97,29 @@ export const CameraModal = ({ onCapture, onClose, type }: CameraProps) => {
       recorder.start()
       mediaRecorderRef.current = recorder
       setIsRecording(true)
+      setCountdown(maxVideoSec)
 
-      // Limite de 30 segundos
+      // Countdown visual
+      countdownRef.current = setInterval(() => {
+        setCountdown(prev => {
+          if (prev === null || prev <= 1) {
+            if (countdownRef.current) clearInterval(countdownRef.current)
+            return null
+          }
+          return prev - 1
+        })
+      }, 1000)
+
+      // Limite configurável
       setTimeout(() => {
         if (recorder.state === 'recording') stopRecording()
-      }, 30000)
+      }, maxVideoSec * 1000)
     }
   }
 
   const stopRecording = () => {
+    if (countdownRef.current) clearInterval(countdownRef.current)
+    setCountdown(null)
     mediaRecorderRef.current?.stop()
     setIsRecording(false)
     stopCamera()
@@ -117,9 +147,10 @@ export const CameraModal = ({ onCapture, onClose, type }: CameraProps) => {
         </div>
 
         {type === 'video' && isRecording && (
-            <div className="absolute top-10 left-1/2 -translate-x-1/2 bg-red-600 px-4 py-1 rounded-full text-white text-xs font-bold animate-pulse">
-                GRAVANDO
-            </div>
+          <div className="absolute top-10 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-red-600 px-4 py-1.5 rounded-full text-white text-xs font-bold">
+            <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
+            GRAVANDO {countdown !== null && <span className="font-mono">{countdown}s</span>}
+          </div>
         )}
       </div>
 
@@ -140,7 +171,23 @@ export const CameraModal = ({ onCapture, onClose, type }: CameraProps) => {
           />
         )}
 
-        <div className="w-16" /> {/* Spacer */}
+        {/* Galeria — só aparece se habilitado nas configurações */}
+        {allowGallery && type === 'photo' ? (
+          <label className="w-16 flex flex-col items-center gap-1 cursor-pointer">
+            <span className="text-white text-xs font-bold">GALERIA</span>
+            <input
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0]
+                if (file) { stopCamera(); onCapture(file) }
+              }}
+            />
+          </label>
+        ) : (
+          <div className="w-16" />
+        )}
       </div>
     </div>
   )
