@@ -39,6 +39,16 @@ export async function middleware(req: NextRequest) {
 
   const url = req.nextUrl.clone()
 
+  // Rotas públicas — sem autenticação necessária
+  const publicPaths = ['/login', '/instalar']
+  if (publicPaths.some(p => url.pathname.startsWith(p))) {
+    if (!user) return res
+    // Authenticated user on a public page — redirect to their home
+    const role = user.user_metadata?.role ?? req.cookies.get('x-role')?.value
+    url.pathname = role === 'admin' ? '/dashboard' : '/home'
+    return NextResponse.redirect(url)
+  }
+
   // Unauthenticated — redirect to login
   if (!user && !url.pathname.startsWith('/login')) {
     url.pathname = '/login'
@@ -74,16 +84,9 @@ export async function middleware(req: NextRequest) {
     }
 
     const isDashboardRoute = url.pathname.startsWith('/dashboard')
-    const isLoginRoute = url.pathname.startsWith('/login')
     const isRootRoute = url.pathname === '/'
     const isMobileRoute = /^\/(home|pops|alerts|profile|shift|resident|execution|incidents)(\/.*)?$/.test(url.pathname)
     const canAccessDashboard = role === 'admin'
-
-    // Authenticated user on login page — redirect to their home
-    if (isLoginRoute) {
-      url.pathname = canAccessDashboard ? '/dashboard' : '/home'
-      return NextResponse.redirect(url)
-    }
 
     // Root "/" — redirect to appropriate home
     if (isRootRoute) {
