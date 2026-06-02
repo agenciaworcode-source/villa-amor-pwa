@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { createClient } from '@/utils/supabase/client'
 import { SectionHeader, Card, StatusBadge, Btn, EmptyState } from './ui'
 import { Execution, Resident, POP } from '@/types'
 
@@ -48,8 +49,48 @@ function exportToCSV(rows: ExecWithDetails[]) {
   URL.revokeObjectURL(url)
 }
 
-export function ExecutionsClient({ executions }: { executions: ExecWithDetails[] }) {
-  const [filter, setFilter] = useState('all')
+export function ExecutionsClient({ executions: initial }: { executions: ExecWithDetails[] }) {
+  const [executions, setExecutions] = useState<ExecWithDetails[]>(initial)
+  const [filter, setFilter]         = useState('all')
+
+  // Realtime: atualiza status e completed_at quando colaborador conclui/inicia
+  useEffect(() => {
+    const supabase = createClient()
+    const channel = supabase
+      .channel('executions-dashboard')
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'executions' },
+        (payload) => {
+          const updated = payload.new as Execution
+          setExecutions(prev =>
+            prev.map(e =>
+              e.id === updated.id
+                ? { ...e, status: updated.status, completed_at: updated.completed_at, started_at: updated.started_at }
+                : e
+            )
+          )
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'executions' },
+        async (payload) => {
+          const newExec = payload.new as Execution
+          // Busca detalhes (residente, pop, usuário) para exibir na tabela
+          const supabase2 = createClient()
+          const { data } = await supabase2
+            .from('executions')
+            .select('*, resident:residents(*), pop:pops(*), user:users(id, name)')
+            .eq('id', newExec.id)
+            .single()
+          if (data) setExecutions(prev => [data as ExecWithDetails, ...prev])
+        }
+      )
+      .subscribe()
+
+    return () => { supabase.removeChannel(channel) }
+  }, [])
 
   const filtered = filter === 'all' ? executions : executions.filter(e => e.status === filter)
 
