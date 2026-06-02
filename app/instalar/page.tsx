@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import { InstallButton } from './install-button'
 
 export const metadata: Metadata = {
   title: 'Instalar App — Villa Amor',
@@ -52,6 +53,9 @@ export default function InstalarPage() {
             Acesse rapidamente a partir da tela inicial, sem precisar abrir o navegador.
           </p>
         </div>
+
+        {/* ── Botão de instalação ── */}
+        <InstallButton />
 
         {/* ── Badges de características ── */}
         <div style={{ display: 'flex', justifyContent: 'center', gap: 8, marginBottom: 40, flexWrap: 'wrap' }}>
