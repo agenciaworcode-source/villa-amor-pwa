@@ -10,11 +10,12 @@ interface CameraProps {
 }
 
 export const CameraModal = ({ onCapture, onClose, type }: CameraProps) => {
-  const videoRef = useRef<HTMLVideoElement>(null)
-  const [stream, setStream] = useState<MediaStream | null>(null)
+  const videoRef    = useRef<HTMLVideoElement>(null)
+  const [stream, setStream]         = useState<MediaStream | null>(null)
   const [isRecording, setIsRecording] = useState(false)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
-  const chunksRef = useRef<Blob[]>([])
+  const chunksRef        = useRef<Blob[]>([])
+  const mimeTypeRef      = useRef<string>('')
   const { toast } = useUIStore()
 
   const startCamera = async () => {
@@ -61,22 +62,30 @@ export const CameraModal = ({ onCapture, onClose, type }: CameraProps) => {
   const startRecording = () => {
     if (stream) {
       chunksRef.current = []
-      const recorder = new MediaRecorder(stream, { mimeType: 'video/webm' })
+
+      // Detecta MIME type suportado pelo browser (iOS Safari usa mp4, Android usa webm)
+      const candidates = ['video/mp4', 'video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm']
+      const mimeType = candidates.find(t => {
+        try { return MediaRecorder.isTypeSupported(t) } catch { return false }
+      }) ?? ''
+      mimeTypeRef.current = mimeType
+
+      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : {})
       recorder.ondataavailable = (e) => {
         if (e.data.size > 0) chunksRef.current.push(e.data)
       }
       recorder.onstop = () => {
-        const blob = new Blob(chunksRef.current, { type: 'video/webm' })
+        const blob = new Blob(chunksRef.current, { type: mimeTypeRef.current || 'video/webm' })
         onCapture(blob)
       }
       recorder.start()
       mediaRecorderRef.current = recorder
       setIsRecording(true)
-      
-      // Limite de 10 segundos conforme regra de negócio
+
+      // Limite de 30 segundos
       setTimeout(() => {
         if (recorder.state === 'recording') stopRecording()
-      }, 10000)
+      }, 30000)
     }
   }
 

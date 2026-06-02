@@ -5,9 +5,11 @@ import { createClient } from '@/utils/supabase/client'
 import { SectionHeader, Card, StatusBadge, Btn, EmptyState } from './ui'
 import { Execution, Resident, POP, ExecutionStep } from '@/types'
 
-type PopStepMeta = { title: string; order_index: number; is_mandatory: boolean }
-type StepSummary = Pick<ExecutionStep, 'id' | 'status' | 'completed_at'> & {
+type PopStepMeta  = { title: string; order_index: number; is_mandatory: boolean }
+type MediaSummary = { storage_path: string; type: 'photo' | 'video' }
+type StepSummary  = Pick<ExecutionStep, 'id' | 'status' | 'completed_at'> & {
   pop_step?: PopStepMeta | null
+  media?:    MediaSummary[] | null
 }
 type ExecWithDetails = Omit<Execution, 'steps'> & {
   resident: Resident
@@ -34,6 +36,46 @@ const STEP_ICON: Record<string, { icon: string; color: string }> = {
   in_progress: { icon: '▶', color: '#B8864E' },
   pending:     { icon: '○', color: '#C4B8A8' },
   skipped:     { icon: '—', color: '#C4B8A8' },
+}
+
+// Carrega URL assinada do Supabase Storage e exibe thumbnail ou link de vídeo
+function MediaThumb({ path, mediaType }: { path: string; mediaType: 'photo' | 'video' }) {
+  const [url, setUrl] = useState<string | null>(null)
+
+  useEffect(() => {
+    const supabase = createClient()
+    supabase.storage.from('execution-media').createSignedUrl(path, 3600).then(({ data }) => {
+      if (data?.signedUrl) setUrl(data.signedUrl)
+    })
+  }, [path])
+
+  if (mediaType === 'video') {
+    return (
+      <a
+        href={url ?? '#'}
+        target="_blank"
+        rel="noopener noreferrer"
+        style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 8px', background: '#1C1C1C', borderRadius: 6, color: 'white', fontSize: 11, fontWeight: 700, textDecoration: 'none', opacity: url ? 1 : 0.5, pointerEvents: url ? 'auto' : 'none' }}
+      >
+        🎥 Ver vídeo
+      </a>
+    )
+  }
+
+  if (!url) {
+    return <div style={{ width: 48, height: 48, background: '#F7F0E3', borderRadius: 8, flexShrink: 0 }} />
+  }
+
+  return (
+    <a href={url} target="_blank" rel="noopener noreferrer" style={{ flexShrink: 0 }}>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={url}
+        alt="evidência"
+        style={{ width: 48, height: 48, objectFit: 'cover', borderRadius: 8, cursor: 'pointer', display: 'block', border: '2px solid #EDE0C8' }}
+      />
+    </a>
+  )
 }
 
 function exportToCSV(rows: ExecWithDetails[]) {
@@ -286,24 +328,33 @@ export function ExecutionsClient({ executions: initial }: { executions: ExecWith
                       <div
                         key={step.id}
                         style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 10,
-                          padding: '6px 0',
+                          padding: '8px 0',
                           borderBottom: '1px dashed #EDE0C8',
                         }}
                       >
-                        <span style={{ fontSize: 13, fontWeight: 700, color: cfg.color, width: 16, textAlign: 'center', flexShrink: 0 }}>
-                          {cfg.icon}
-                        </span>
-                        <span style={{ fontSize: 12, color: step.status === 'completed' ? '#1C1C1C' : '#9C8E80', flex: 1, fontWeight: step.status === 'completed' ? 600 : 400 }}>
-                          {step.pop_step?.title ?? `Etapa ${step.id.slice(0, 4)}`}
-                          {step.pop_step?.is_mandatory === false && (
-                            <span style={{ fontSize: 9, color: '#C4B8A8', marginLeft: 6, fontWeight: 400, textTransform: 'uppercase', letterSpacing: '0.5px' }}>opcional</span>
+                        {/* linha principal da etapa */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <span style={{ fontSize: 13, fontWeight: 700, color: cfg.color, width: 16, textAlign: 'center', flexShrink: 0 }}>
+                            {cfg.icon}
+                          </span>
+                          <span style={{ fontSize: 12, color: step.status === 'completed' ? '#1C1C1C' : '#9C8E80', flex: 1, fontWeight: step.status === 'completed' ? 600 : 400 }}>
+                            {step.pop_step?.title ?? `Etapa ${step.id.slice(0, 4)}`}
+                            {step.pop_step?.is_mandatory === false && (
+                              <span style={{ fontSize: 9, color: '#C4B8A8', marginLeft: 6, fontWeight: 400, textTransform: 'uppercase', letterSpacing: '0.5px' }}>opcional</span>
+                            )}
+                          </span>
+                          {time && (
+                            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: '#22C55E', flexShrink: 0 }}>{time}</span>
                           )}
-                        </span>
-                        {time && (
-                          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: '#22C55E' }}>{time}</span>
+                        </div>
+
+                        {/* evidências (foto/vídeo) */}
+                        {step.media && step.media.length > 0 && (
+                          <div style={{ display: 'flex', gap: 8, marginTop: 8, marginLeft: 26, flexWrap: 'wrap' }}>
+                            {step.media.map((m, mi) => (
+                              <MediaThumb key={mi} path={m.storage_path} mediaType={m.type} />
+                            ))}
+                          </div>
                         )}
                       </div>
                     )

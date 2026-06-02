@@ -20,7 +20,8 @@ export default async function ExecutionsPage() {
       user:users(id, name),
       steps:execution_steps(
         id, status, completed_at,
-        pop_step:pop_steps(title, order_index, is_mandatory)
+        pop_step:pop_steps(title, order_index, is_mandatory),
+        media:media_files(storage_path, type)
       )
     `)
     .gte('created_at', since)
