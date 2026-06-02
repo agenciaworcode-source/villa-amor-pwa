@@ -28,6 +28,10 @@ export const metadata: Metadata = {
   title: "Villa Amor — Gestão Operacional",
   description: "Sistema de gestão assistencial para a Villa Amor Marília",
   manifest: "/manifest.json",
+  icons: {
+    icon: "/favicon.ico",
+    shortcut: "/favicon.ico",
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
