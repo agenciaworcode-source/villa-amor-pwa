@@ -68,7 +68,17 @@ function exportToCSV(rows: ExecWithDetails[]) {
 export function ExecutionsClient({ executions: initial }: { executions: ExecWithDetails[] }) {
   const [executions, setExecutions] = useState<ExecWithDetails[]>(initial)
   const [filter, setFilter]         = useState('all')
+  const [userId, setUserId]         = useState<string | null>(null)
   const [expandedId, setExpandedId] = useState<string | null>(null)
+
+  // Colaboradores únicos presentes nas execuções carregadas
+  const collaborators = Array.from(
+    new Map(
+      executions
+        .filter(e => e.user)
+        .map(e => [e.user!.id, e.user!])
+    ).values()
+  ).sort((a, b) => a.name.localeCompare(b.name))
 
   // Realtime: atualiza execuções e steps quando colaborador avança tarefas
   useEffect(() => {
@@ -147,7 +157,9 @@ export function ExecutionsClient({ executions: initial }: { executions: ExecWith
     return () => { supabase.removeChannel(channel) }
   }, [])
 
-  const filtered = filter === 'all' ? executions : executions.filter(e => e.status === filter)
+  const filtered = executions
+    .filter(e => filter === 'all' || e.status === filter)
+    .filter(e => userId === null || e.user?.id === userId)
 
   return (
     <div>
@@ -158,6 +170,30 @@ export function ExecutionsClient({ executions: initial }: { executions: ExecWith
         action={<Btn variant="secondary" size="sm" onClick={() => exportToCSV(filtered)}>⬇ Exportar CSV</Btn>}
       />
 
+      {/* Filtro por colaborador */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1px', color: '#9C8E80', marginRight: 2 }}>Colaborador</span>
+        <button
+          onClick={() => setUserId(null)}
+          style={{ padding: '6px 12px', borderRadius: 8, border: `1.5px solid ${userId === null ? '#5C5248' : '#EDE0C8'}`, background: userId === null ? '#5C5248' : 'white', color: userId === null ? 'white' : '#5C5248', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'var(--font-lato)' }}
+        >
+          Todos
+        </button>
+        {collaborators.map(c => (
+          <button
+            key={c.id}
+            onClick={() => setUserId(userId === c.id ? null : c.id)}
+            style={{ padding: '6px 12px', borderRadius: 8, border: `1.5px solid ${userId === c.id ? '#5C5248' : '#EDE0C8'}`, background: userId === c.id ? '#5C5248' : 'white', color: userId === c.id ? 'white' : '#5C5248', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'var(--font-lato)', display: 'flex', alignItems: 'center', gap: 6 }}
+          >
+            <span style={{ width: 20, height: 20, borderRadius: '50%', background: userId === c.id ? 'rgba(255,255,255,0.2)' : '#F7F0E3', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 700, color: userId === c.id ? 'white' : '#B8864E', flexShrink: 0 }}>
+              {c.name.split(' ').map(w => w[0]).slice(0, 2).join('')}
+            </span>
+            {c.name.split(' ')[0]}
+          </button>
+        ))}
+      </div>
+
+      {/* Filtro por status */}
       <div style={{ display: 'flex', gap: 6, marginBottom: 20, flexWrap: 'wrap' }}>
         {FILTERS.map(f => (
           <button
