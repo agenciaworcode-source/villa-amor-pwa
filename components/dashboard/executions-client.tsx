@@ -1,9 +1,10 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useTransition } from 'react'
 import { createClient } from '@/utils/supabase/client'
 import { SectionHeader, Card, StatusBadge, Btn, EmptyState } from './ui'
 import { Execution, Resident, POP, ExecutionStep } from '@/types'
+import { requeueExecution } from '@/app/actions/executions'
 
 type PopStepMeta  = { title: string; order_index: number; is_mandatory: boolean }
 type MediaSummary = { storage_path: string; type: 'photo' | 'video' }
@@ -108,10 +109,12 @@ function exportToCSV(rows: ExecWithDetails[]) {
 }
 
 export function ExecutionsClient({ executions: initial }: { executions: ExecWithDetails[] }) {
-  const [executions, setExecutions] = useState<ExecWithDetails[]>(initial)
-  const [filter, setFilter]         = useState('all')
-  const [userId, setUserId]         = useState<string | null>(null)
-  const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [executions, setExecutions]   = useState<ExecWithDetails[]>(initial)
+  const [filter, setFilter]           = useState('all')
+  const [userId, setUserId]           = useState<string | null>(null)
+  const [expandedId, setExpandedId]   = useState<string | null>(null)
+  const [requeueId, setRequeueId]     = useState<string | null>(null)  // execução sendo reenviada
+  const [isPending, startTransition]  = useTransition()
 
   // Colaboradores únicos presentes nas execuções carregadas
   const collaborators = Array.from(
@@ -359,6 +362,55 @@ export function ExecutionsClient({ executions: initial }: { executions: ExecWith
                       </div>
                     )
                   })}
+
+                  {/* Botão de reenvio — só para execuções que já saíram do pending */}
+                  {['completed', 'late', 'incomplete', 'in_progress'].includes(e.status) && (
+                    <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid #EDE0C8' }}>
+                      {requeueId === e.id ? (
+                        /* Confirmação */
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{ fontSize: 12, color: '#5C5248', flex: 1 }}>
+                            Resetar todas as etapas e enviar de volta para execução?
+                          </span>
+                          <button
+                            disabled={isPending}
+                            onClick={() => {
+                              startTransition(async () => {
+                                const result = await requeueExecution(e.id)
+                                if (result.error) {
+                                  alert(result.error)
+                                } else {
+                                  // Atualiza estado local imediatamente
+                                  setExecutions(prev => prev.map(ex =>
+                                    ex.id === e.id
+                                      ? { ...ex, status: 'in_progress', completed_at: null, steps: (ex.steps ?? []).map(s => ({ ...s, status: 'pending' as const, completed_at: null })) }
+                                      : ex
+                                  ))
+                                }
+                                setRequeueId(null)
+                              })
+                            }}
+                            style={{ padding: '5px 12px', borderRadius: 7, background: '#EF4444', color: 'white', fontSize: 11, fontWeight: 700, border: 'none', cursor: 'pointer' }}
+                          >
+                            {isPending ? '...' : 'Confirmar'}
+                          </button>
+                          <button
+                            onClick={() => setRequeueId(null)}
+                            style={{ padding: '5px 12px', borderRadius: 7, background: '#F7F0E3', color: '#5C5248', fontSize: 11, fontWeight: 700, border: 'none', cursor: 'pointer' }}
+                          >
+                            Cancelar
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => setRequeueId(e.id)}
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 14px', borderRadius: 8, border: '1.5px solid #EDE0C8', background: 'white', color: '#5C5248', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'var(--font-lato)' }}
+                        >
+                          ↺ Reenviar para execução
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
