@@ -5,7 +5,10 @@ import { createClient } from '@/utils/supabase/client'
 import { SectionHeader, Card, StatusBadge, Btn, EmptyState } from './ui'
 import { Execution, Resident, POP, ExecutionStep } from '@/types'
 
-type StepSummary = Pick<ExecutionStep, 'id' | 'status' | 'completed_at'>
+type PopStepMeta = { title: string; order_index: number; is_mandatory: boolean }
+type StepSummary = Pick<ExecutionStep, 'id' | 'status' | 'completed_at'> & {
+  pop_step?: PopStepMeta | null
+}
 type ExecWithDetails = Omit<Execution, 'steps'> & {
   resident: Resident
   pop: POP
@@ -24,6 +27,13 @@ const FILTERS = [
 const STATUS_LABELS: Record<string, string> = {
   completed: 'Concluída', in_progress: 'Em andamento', late: 'Atrasada',
   pending: 'Pendente', incomplete: 'Incompleta',
+}
+
+const STEP_ICON: Record<string, { icon: string; color: string }> = {
+  completed:   { icon: '✓', color: '#22C55E' },
+  in_progress: { icon: '▶', color: '#B8864E' },
+  pending:     { icon: '○', color: '#C4B8A8' },
+  skipped:     { icon: '—', color: '#C4B8A8' },
 }
 
 function exportToCSV(rows: ExecWithDetails[]) {
@@ -46,7 +56,7 @@ function exportToCSV(rows: ExecWithDetails[]) {
   const csv = [headers, ...data]
     .map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(','))
     .join('\n')
-  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' })
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
@@ -58,6 +68,7 @@ function exportToCSV(rows: ExecWithDetails[]) {
 export function ExecutionsClient({ executions: initial }: { executions: ExecWithDetails[] }) {
   const [executions, setExecutions] = useState<ExecWithDetails[]>(initial)
   const [filter, setFilter]         = useState('all')
+  const [expandedId, setExpandedId] = useState<string | null>(null)
 
   // Realtime: atualiza execuções e steps quando colaborador avança tarefas
   useEffect(() => {
@@ -88,39 +99,45 @@ export function ExecutionsClient({ executions: initial }: { executions: ExecWith
           const supabase2 = createClient()
           const { data } = await supabase2
             .from('executions')
-            .select('*, resident:residents(*), pop:pops(*), user:users(id, name), steps:execution_steps(id, status, completed_at)')
+            .select(`*, resident:residents(*), pop:pops(*), user:users(id, name),
+              steps:execution_steps(id, status, completed_at, pop_step:pop_steps(title, order_index, is_mandatory))`)
             .eq('id', newExec.id)
             .single()
           if (data) setExecutions(prev => [data as ExecWithDetails, ...prev])
         }
       )
-      // Step atualizado (check-in / check-out de etapa) — atualiza progresso
+      // Step atualizado (check-in / check-out de etapa) — atualiza status em tempo real
       .on(
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'execution_steps' },
         (payload) => {
-          const step = payload.new as StepSummary & { execution_id: string }
+          const step = payload.new as { id: string; execution_id: string; status: string; completed_at: string | null }
           setExecutions(prev =>
             prev.map(e => {
               if (e.id !== step.execution_id) return e
               const updatedSteps = (e.steps ?? []).map(s =>
-                s.id === step.id ? { ...s, status: step.status, completed_at: step.completed_at } : s
+                s.id === step.id
+                  ? { ...s, status: step.status as StepSummary['status'], completed_at: step.completed_at }
+                  : s
               )
               return { ...e, steps: updatedSteps }
             })
           )
         }
       )
-      // Novo step inserido — adiciona ao array de steps da execução
+      // Novo step inserido — adiciona ao array preservando pop_step se já existir
       .on(
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'execution_steps' },
         (payload) => {
-          const step = payload.new as StepSummary & { execution_id: string }
+          const step = payload.new as { id: string; execution_id: string; status: string; completed_at: string | null }
           setExecutions(prev =>
             prev.map(e => {
               if (e.id !== step.execution_id) return e
-              return { ...e, steps: [...(e.steps ?? []), step] }
+              // Evita duplicatas
+              if (e.steps?.some(s => s.id === step.id)) return e
+              const newStep: StepSummary = { id: step.id, status: step.status as StepSummary['status'], completed_at: step.completed_at }
+              return { ...e, steps: [...(e.steps ?? []), newStep] }
             })
           )
         }
@@ -155,42 +172,108 @@ export function ExecutionsClient({ executions: initial }: { executions: ExecWith
 
       <Card>
         {/* Header da tabela */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 100px 80px 70px 90px', gap: 12, padding: '10px 20px', borderBottom: '2px solid #F7F0E3', background: '#FDFAF5', borderRadius: '12px 12px 0 0' }}>
-          {['POP', 'Residente', 'Colaborador', 'Início', 'Duração', 'Etapas', 'Status'].map(h => (
-            <span key={h} style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1.2px', color: '#9C8E80' }}>{h}</span>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 100px 80px 70px 90px 32px', gap: 12, padding: '10px 20px', borderBottom: '2px solid #F7F0E3', background: '#FDFAF5', borderRadius: '12px 12px 0 0' }}>
+          {['POP', 'Residente', 'Colaborador', 'Início', 'Duração', 'Etapas', 'Status', ''].map((h, i) => (
+            <span key={i} style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1.2px', color: '#9C8E80' }}>{h}</span>
           ))}
         </div>
 
         {filtered.length === 0 ? (
           <EmptyState icon="◈" title="Nenhuma execução encontrada" sub="Tente ajustar os filtros ou aguarde o início das execuções" />
         ) : filtered.map((e, i) => {
-          const initials = e.resident?.name?.split(' ').map((w: string) => w[0]).slice(0, 2).join('') ?? 'RR'
-          const duration = e.completed_at && e.started_at
+          const isExpanded     = expandedId === e.id
+          const initials       = e.resident?.name?.split(' ').map((w: string) => w[0]).slice(0, 2).join('') ?? 'RR'
+          const duration       = e.completed_at && e.started_at
             ? `${Math.round((new Date(e.completed_at).getTime() - new Date(e.started_at).getTime()) / 60000)} min`
             : '—'
-          const totalSteps     = e.steps?.length ?? 0
-          const completedSteps = e.steps?.filter(s => s.status === 'completed').length ?? 0
+          const sortedSteps    = [...(e.steps ?? [])].sort((a, b) =>
+            (a.pop_step?.order_index ?? 0) - (b.pop_step?.order_index ?? 0)
+          )
+          const totalSteps     = sortedSteps.length
+          const completedSteps = sortedSteps.filter(s => s.status === 'completed').length
           const stepLabel      = totalSteps > 0 ? `${completedSteps}/${totalSteps}` : '—'
           const stepColor      = totalSteps === 0 ? '#9C8E80' : completedSteps === totalSteps ? '#22C55E' : completedSteps > 0 ? '#B8864E' : '#9C8E80'
+          const isLast         = i === filtered.length - 1
+
           return (
-            <div
-              key={e.id}
-              style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 100px 80px 70px 90px', gap: 12, padding: '13px 20px', borderBottom: i < filtered.length - 1 ? '1px solid #F7F0E3' : 'none', alignItems: 'center', cursor: 'pointer' }}
-            >
-              <span style={{ fontSize: 13, fontWeight: 700, color: '#1C1C1C' }}>{e.pop?.name ?? '—'}</span>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <div style={{ width: 28, height: 28, borderRadius: '50%', background: '#F7F0E3', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, color: '#B8864E', flexShrink: 0 }}>
-                  {initials}
+            <div key={e.id}>
+              {/* Linha principal */}
+              <div
+                onClick={() => setExpandedId(isExpanded ? null : e.id)}
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: '1fr 1fr 1fr 100px 80px 70px 90px 32px',
+                  gap: 12,
+                  padding: '13px 20px',
+                  borderBottom: (!isExpanded && !isLast) ? '1px solid #F7F0E3' : 'none',
+                  alignItems: 'center',
+                  cursor: 'pointer',
+                  background: isExpanded ? '#FDFAF5' : undefined,
+                  transition: 'background 0.15s',
+                }}
+              >
+                <span style={{ fontSize: 13, fontWeight: 700, color: '#1C1C1C' }}>{e.pop?.name ?? '—'}</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div style={{ width: 28, height: 28, borderRadius: '50%', background: '#F7F0E3', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, color: '#B8864E', flexShrink: 0 }}>
+                    {initials}
+                  </div>
+                  <span style={{ fontSize: 12, color: '#5C5248' }}>{e.resident?.name ?? '—'}</span>
                 </div>
-                <span style={{ fontSize: 12, color: '#5C5248' }}>{e.resident?.name ?? '—'}</span>
+                <span style={{ fontSize: 12, color: '#9C8E80' }}>{e.user?.name ?? '—'}</span>
+                <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: '#5C5248' }}>
+                  {e.started_at ? new Date(e.started_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '—'}
+                </span>
+                <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: '#9C8E80' }}>{duration}</span>
+                <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, fontWeight: 700, color: stepColor }}>{stepLabel}</span>
+                <StatusBadge status={e.status} />
+                {/* Chevron */}
+                <span style={{ fontSize: 12, color: '#B8864E', textAlign: 'center', transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s', display: 'block' }}>
+                  ▾
+                </span>
               </div>
-              <span style={{ fontSize: 12, color: '#9C8E80' }}>{e.user?.name ?? '—'}</span>
-              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: '#5C5248' }}>
-                {e.started_at ? new Date(e.started_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '—'}
-              </span>
-              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: '#9C8E80' }}>{duration}</span>
-              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, fontWeight: 700, color: stepColor }}>{stepLabel}</span>
-              <StatusBadge status={e.status} />
+
+              {/* Dropdown de etapas */}
+              {isExpanded && (
+                <div style={{
+                  borderBottom: !isLast ? '1px solid #F7F0E3' : 'none',
+                  background: '#FDFAF5',
+                  padding: '0 20px 14px 56px',
+                }}>
+                  {sortedSteps.length === 0 ? (
+                    <p style={{ fontSize: 12, color: '#9C8E80', fontStyle: 'italic', paddingTop: 8 }}>Nenhuma etapa registrada ainda.</p>
+                  ) : sortedSteps.map(step => {
+                    const cfg = STEP_ICON[step.status] ?? STEP_ICON.pending
+                    const time = step.completed_at
+                      ? new Date(step.completed_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+                      : null
+                    return (
+                      <div
+                        key={step.id}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 10,
+                          padding: '6px 0',
+                          borderBottom: '1px dashed #EDE0C8',
+                        }}
+                      >
+                        <span style={{ fontSize: 13, fontWeight: 700, color: cfg.color, width: 16, textAlign: 'center', flexShrink: 0 }}>
+                          {cfg.icon}
+                        </span>
+                        <span style={{ fontSize: 12, color: step.status === 'completed' ? '#1C1C1C' : '#9C8E80', flex: 1, fontWeight: step.status === 'completed' ? 600 : 400 }}>
+                          {step.pop_step?.title ?? `Etapa ${step.id.slice(0, 4)}`}
+                          {step.pop_step?.is_mandatory === false && (
+                            <span style={{ fontSize: 9, color: '#C4B8A8', marginLeft: 6, fontWeight: 400, textTransform: 'uppercase', letterSpacing: '0.5px' }}>opcional</span>
+                          )}
+                        </span>
+                        {time && (
+                          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: '#22C55E' }}>{time}</span>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
             </div>
           )
         })}

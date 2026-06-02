@@ -13,7 +13,16 @@ export default async function ExecutionsPage() {
 
   const { data } = await supabase
     .from('executions')
-    .select('*, resident:residents(*), pop:pops(*), user:users(id, name), steps:execution_steps(id, status, completed_at)')
+    .select(`
+      *,
+      resident:residents(*),
+      pop:pops(*),
+      user:users(id, name),
+      steps:execution_steps(
+        id, status, completed_at,
+        pop_step:pop_steps(title, order_index, is_mandatory)
+      )
+    `)
     .gte('created_at', since)
     .order('created_at', { ascending: false })
     .limit(200)
