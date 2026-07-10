@@ -27,14 +27,17 @@ export async function POST(req: NextRequest) {
     if (!sessionUser) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
 
     const body = await req.json()
-    const { email, name, role, password } = body as {
+    const { email, name, role, password, roles, notes } = body as {
       email: string; name: string; role: string; password: string
+      roles?: { role: string; is_primary: boolean }[]
+      notes?: string
     }
 
-    if (!email || !name || !role || !password) {
-      return NextResponse.json({ error: 'Campos obrigatórios: email, nome, função, senha' }, { status: 400 })
+    if (!email || !name || !password) {
+      return NextResponse.json({ error: 'Campos obrigatórios: email, nome, senha' }, { status: 400 })
     }
 
+    const primaryRole = roles?.find(r => r.is_primary)?.role ?? role ?? 'operational'
     const admin = adminClient()
 
     // 1. Cria o usuário no Supabase Auth
@@ -42,22 +45,33 @@ export async function POST(req: NextRequest) {
       email,
       password,
       email_confirm: true,
-      user_metadata: { name, role },
+      user_metadata: { name, role: primaryRole },
     })
 
     if (error) throw new Error(error.message)
 
     const userId = data.user.id
 
-    // 2. Insere direto na tabela users (não depende do trigger)
+    // 2. Insere na tabela users
     const { error: dbError } = await admin
       .from('users')
-      .upsert({ id: userId, name, email, role, active: true }, { onConflict: 'id' })
+      .upsert({ id: userId, name, email, role: primaryRole, notes: notes ?? null, active: true }, { onConflict: 'id' })
 
     if (dbError) {
-      // Mesmo que a inserção na tabela users falhe, o auth user foi criado.
-      // Loga o erro mas não falha a requisição — o trigger pode ter já inserido.
       console.error('Aviso: falha ao inserir na tabela users:', dbError.message)
+    }
+
+    // 3. Insere profissões múltiplas em user_roles
+    const rolesToInsert = roles && roles.length > 0
+      ? roles
+      : [{ role: primaryRole, is_primary: true }]
+
+    const { error: rolesError } = await admin
+      .from('user_roles')
+      .insert(rolesToInsert.map(r => ({ user_id: userId, role: r.role, is_primary: r.is_primary })))
+
+    if (rolesError) {
+      console.error('Aviso: falha ao inserir user_roles:', rolesError.message)
     }
 
     return NextResponse.json({ user: data.user }, { status: 201 })
@@ -73,33 +87,52 @@ export async function PATCH(req: NextRequest) {
     if (!sessionUser) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
 
     const body = await req.json()
-    const { id, name, role, active } = body as {
-      id: string; name?: string; role?: string; active?: boolean
+    const { id, name, email, role, active, roles, notes } = body as {
+      id: string; name?: string; email?: string; role?: string; active?: boolean
+      roles?: { role: string; is_primary: boolean }[]
+      notes?: string | null
     }
 
     if (!id) return NextResponse.json({ error: 'ID é obrigatório' }, { status: 400 })
 
     const admin = adminClient()
+    const primaryRole = roles?.find(r => r.is_primary)?.role ?? role
 
-    // 1. Atualiza no Supabase Auth se houver metadados
-    if (name || role) {
-      const { error: authError } = await admin.auth.admin.updateUserById(id, {
-        user_metadata: { ...(name ? { name } : {}), ...(role ? { role } : {}) }
-      })
+    // 1. Atualiza no Supabase Auth
+    const authUpdates: Record<string, unknown> = {}
+    if (email) authUpdates.email = email
+    if (name || primaryRole) {
+      authUpdates.user_metadata = {
+        ...(name ? { name } : {}),
+        ...(primaryRole ? { role: primaryRole } : {}),
+      }
+    }
+    if (Object.keys(authUpdates).length > 0) {
+      const { error: authError } = await admin.auth.admin.updateUserById(id, authUpdates)
       if (authError) throw new Error(authError.message)
     }
 
     // 2. Atualiza na tabela users
-    const { error: dbError } = await admin
-      .from('users')
-      .update({
-        ...(name ? { name } : {}),
-        ...(role ? { role } : {}),
-        ...(active !== undefined ? { active } : {})
-      })
-      .eq('id', id)
+    const userUpdates: Record<string, unknown> = {}
+    if (name !== undefined)   userUpdates.name   = name
+    if (email !== undefined)  userUpdates.email  = email
+    if (primaryRole)          userUpdates.role   = primaryRole
+    if (active !== undefined) userUpdates.active = active
+    if (notes !== undefined)  userUpdates.notes  = notes
 
-    if (dbError) throw new Error(dbError.message)
+    if (Object.keys(userUpdates).length > 0) {
+      const { error: dbError } = await admin.from('users').update(userUpdates).eq('id', id)
+      if (dbError) throw new Error(dbError.message)
+    }
+
+    // 3. Atualiza profissões múltiplas: apaga e re-insere
+    if (roles && roles.length > 0) {
+      await admin.from('user_roles').delete().eq('user_id', id)
+      const { error: rolesError } = await admin
+        .from('user_roles')
+        .insert(roles.map(r => ({ user_id: id, role: r.role, is_primary: r.is_primary })))
+      if (rolesError) throw new Error(rolesError.message)
+    }
 
     return NextResponse.json({ success: true })
   } catch (err) {

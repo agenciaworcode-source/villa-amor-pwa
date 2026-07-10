@@ -1,6 +1,6 @@
 import { SupabaseClient } from '@supabase/supabase-js'
 import { supabase as defaultClient } from '@/utils/supabase/client'
-import { POP, POPBlock, POPStep, UserRole, ShiftType, StepType, ResidentPOPAssignment, POPStaffRotation, Resident, UserProfile } from '@/types'
+import { POP, POPBlock, POPStep, POPRoleAssignment, UserRole, ShiftType, StepType, ResidentPOPAssignment, POPStaffRotation, Resident, UserProfile } from '@/types'
 
 export interface CreatePOPDTO {
   name: string
@@ -9,6 +9,11 @@ export interface CreatePOPDTO {
   tolerance_minutes: number
   start_time_expected?: string
   deadline_time?: string
+  activation_window_minutes?: number
+  late_permission_minutes?: number
+  overlap_allowed?: boolean
+  odd_days_only?: boolean
+  requires_resident?: boolean
 }
 
 export interface CreateBlockDTO {
@@ -49,7 +54,7 @@ export class SupabasePOPRepository implements IPOPRepository {
   async findAllActive(): Promise<POP[]> {
     const { data, error } = await this.supabase
       .from('pops')
-      .select('*')
+      .select('*, assigned_roles:pop_role_assignments(role, is_primary, enabled)')
       .eq('active', true)
       .order('name', { ascending: true })
 
@@ -60,11 +65,20 @@ export class SupabasePOPRepository implements IPOPRepository {
   async findAll(): Promise<POP[]> {
     const { data, error } = await this.supabase
       .from('pops')
-      .select('*')
+      .select('*, assigned_roles:pop_role_assignments(role, is_primary, enabled)')
       .order('name', { ascending: true })
 
     if (error) throw new Error(`Falha ao buscar protocolos: ${error.message} (${error.code})`)
     return data as POP[]
+  }
+
+  async saveRoleAssignments(popId: string, roles: POPRoleAssignment[]): Promise<void> {
+    await this.supabase.from('pop_role_assignments').delete().eq('pop_id', popId)
+    if (roles.length === 0) return
+    const { error } = await this.supabase.from('pop_role_assignments').insert(
+      roles.map(r => ({ pop_id: popId, role: r.role, is_primary: r.is_primary, enabled: r.enabled }))
+    )
+    if (error) throw new Error(`Falha ao salvar profissões do POP: ${error.message}`)
   }
 
   async findByIdWithDetails(id: string): Promise<(POP & { blocks: (POPBlock & { steps: POPStep[] })[] }) | null> {

@@ -9,7 +9,8 @@ export interface CreateResidentDTO {
   birth_date?: string
   nationality?: string
   naturalness?: string
-  // Documentos
+  sexuality?: string
+  // Documentos de identidade
   cpf?: string
   rg?: string
   rg_issuer?: string
@@ -21,7 +22,7 @@ export interface CreateResidentDTO {
   // Nível de cuidado
   dependency_level: DependencyLevel
   is_bedridden: boolean
-  // Responsável legal
+  // Responsável legal (legado — mantido para compatibilidade)
   responsible_name?: string
   responsible_relationship?: string
   responsible_cpf?: string
@@ -36,8 +37,18 @@ export interface CreateResidentDTO {
   diagnoses?: string
   allergies?: string
   medications?: string
+  // Financeiro / contrato
+  entry_date?: string
+  exit_date?: string
+  exit_reason?: string
+  payment_day?: number | null
+  payment_modality?: string
+  stay_type?: string
+  monthly_value?: number | null
+  is_prospect?: boolean
   // Outros
   notes?: string
+  photo_url?: string
 }
 
 export interface IResidentRepository {

@@ -8,12 +8,15 @@ export class UserRepository {
   async findAll(): Promise<UserProfile[]> {
     const { data, error } = await this.supabase
       .from('users')
-      .select('*')
+      .select('*, user_roles(role, is_primary)')
       .eq('active', true)
       .order('name', { ascending: true })
 
     if (error) throw new Error(`Falha ao buscar colaboradores: ${error.message} (${error.code})`)
-    return data as UserProfile[]
+    return (data ?? []).map((u: Record<string, unknown>) => ({
+      ...u,
+      roles: (u.user_roles as { role: string; is_primary: boolean }[] | null) ?? [],
+    })) as UserProfile[]
   }
 
   async findById(id: string): Promise<UserProfile | null> {

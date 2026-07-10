@@ -9,11 +9,16 @@ export default async function TeamPage() {
   const cookieStore = cookies()
   const supabase = createClient(cookieStore)
 
-  const { data } = await supabase
+  const { data: raw } = await supabase
     .from('users')
-    .select('*')
+    .select('*, user_roles(role, is_primary)')
     .eq('active', true)
     .order('name', { ascending: true })
+
+  const data = (raw ?? []).map((u: Record<string, unknown>) => ({
+    ...u,
+    roles: (u.user_roles as { role: string; is_primary: boolean }[] | null) ?? [],
+  }))
 
   return <TeamClient users={(data ?? []) as UserProfile[]} />
 }

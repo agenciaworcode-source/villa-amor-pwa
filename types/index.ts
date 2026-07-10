@@ -8,8 +8,19 @@ export type UserRole =
   | 'nutricionista'
   | 'cozinheiro'
   | 'limpeza'
+  | 'manutencao'
+  | 'terapia_ocupacional'
+  | 'estagiario'
+  | 'menor_aprendiz'
+  | 'marketing'
+  | 'resp_tecnica'
+  | 'musicoterapeuta'
+  | 'fonoaudiologa'
   | 'multiprofessional' // legado — mantido para compatibilidade com dados existentes
-export type DependencyLevel = 'independent' | 'semi' | 'dependent' | 'bedridden'
+export type DependencyLevel = 'independent' | 'g1' | 'g2' | 'g3' | 'bedridden' | 'semi' | 'dependent' // semi/dependent: legado migrado para g2/g3
+export type ExitReason       = 'obito' | 'distrato'
+export type StayType         = 'moradia' | 'day_care' | 'temporada'
+export type PaymentModality  = 'pague_use' | 'use_pague'
 export type ShiftType = 'morning' | 'evening' | 'night' | 'all'
 export type StepType = 'photo' | 'video' | 'checkbox' | 'conditional' | 'timed'
 export type ExecutionStatus = 'pending' | 'in_progress' | 'completed' | 'late' | 'incomplete'
@@ -49,6 +60,17 @@ export interface Resident {
   diagnoses: string | null         // CIDs / diagnósticos livres
   allergies: string | null
   medications: string | null       // medicamentos em uso
+  // Dados pessoais extras
+  sexuality: string | null
+  // Financeiro / contrato
+  entry_date: string | null
+  exit_date: string | null
+  exit_reason: ExitReason | null
+  payment_day: number | null
+  payment_modality: PaymentModality | null
+  stay_type: StayType | null
+  monthly_value: number | null
+  is_prospect: boolean
   // Outros
   notes: string | null
   photo_url: string | null
@@ -57,12 +79,75 @@ export interface Resident {
   updated_at: string
 }
 
+export interface ResidentResponsible {
+  id: string
+  resident_id: string
+  name: string
+  relationship: string | null
+  cpf: string | null
+  phone: string | null
+  email: string | null
+  address: string | null
+  is_primary: boolean
+  is_emergency_contact: boolean
+  is_blocked: boolean
+  block_reason: string | null
+  created_at: string
+}
+
+export interface ResidentDocument {
+  id: string
+  resident_id: string
+  doc_type: string
+  status: DocStatus
+  file_name: string | null
+  storage_path: string | null
+  file_size_bytes: number | null
+  mime_type: string | null
+  uploaded_at: string | null
+  uploaded_by: string | null
+  notes: string | null
+  created_at: string
+}
+
+export interface UserRoleEntry {
+  role: UserRole
+  is_primary: boolean
+}
+
 export interface UserProfile {
   id: string
   name: string
   email: string
-  role: UserRole
+  role: UserRole           // role principal — mantido para compatibilidade
+  roles?: UserRoleEntry[]  // todas as profissões do colaborador
+  notes?: string | null
   active: boolean
+}
+
+export type EmployeeType = 'pf' | 'pj' | 'pcd'
+export type DocStatus = 'pendente' | 'enviado' | 'validado' | 'rejeitado'
+
+export interface UserDocument {
+  id: string
+  user_id: string
+  employee_type: EmployeeType
+  category: string
+  doc_name: string
+  storage_path: string | null
+  file_name: string | null
+  file_size_bytes: number | null
+  mime_type: string | null
+  notes: string | null
+  status: DocStatus
+  uploaded_at: string | null
+  created_at: string
+}
+
+export interface POPRoleAssignment {
+  role: UserRole
+  is_primary: boolean
+  enabled: boolean
 }
 
 export interface POP {
@@ -73,10 +158,30 @@ export interface POP {
   start_time_expected: string | null
   deadline_time: string | null
   tolerance_minutes: number
-  requires_resident: boolean   // false = manutenção, cozinha, etc.
+  activation_window_minutes: number  // min após start_time para iniciar livremente (padrão 15)
+  late_permission_minutes: number    // min após janela para pedir aprovação ao ADM (padrão 10)
+  overlap_allowed: boolean           // se false, não pode ter outro POP em andamento
+  odd_days_only: boolean             // se true, só vale em dias ímpares do mês
+  requires_resident: boolean
   active: boolean
   version: number
   created_at: string
+  assigned_roles?: POPRoleAssignment[] // profissões vinculadas (join pop_role_assignments)
+}
+
+export interface POPLateApproval {
+  id: string
+  execution_id: string | null
+  user_id: string
+  pop_id: string
+  requested_at: string
+  minutes_late: number | null
+  status: 'pending' | 'approved' | 'rejected'
+  reviewed_by: string | null
+  reviewed_at: string | null
+  review_notes: string | null
+  pop?: Pick<POP, 'id' | 'name'>
+  user?: Pick<UserProfile, 'id' | 'name'>
 }
 
 export interface POPBlock {

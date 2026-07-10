@@ -1,6 +1,7 @@
 import { cookies } from 'next/headers'
 import { createClient } from '@/utils/supabase/server'
 import { AlertsRealtime } from '@/components/mobile/alerts-realtime'
+import { PendingApprovals } from '@/components/mobile/pending-approvals'
 import Link from 'next/link'
 
 export const dynamic = 'force-dynamic'
@@ -41,6 +42,18 @@ export default async function AlertsPage() {
         a.pop?.role_type === userRole
       )
 
+  // Aprovações pendentes (só admin/supervisor)
+  let pendingApprovals: any[] = []
+  if (isPrivileged) {
+    const { data: approvals } = await supabase
+      .from('pop_late_approvals')
+      .select('*, pop:pops(id, name), user:users(id, name, role)')
+      .eq('status', 'pending')
+      .order('requested_at', { ascending: false })
+      .limit(50)
+    pendingApprovals = approvals ?? []
+  }
+
   return (
     <div className="flex flex-col h-full bg-cream-50">
       <div className="p-6 pb-4">
@@ -55,7 +68,11 @@ export default async function AlertsPage() {
         )}
       </div>
 
-      <div className="flex-1 px-6 pb-6 space-y-3 overflow-y-auto">
+      <div className="flex-1 px-6 pb-6 space-y-4 overflow-y-auto">
+        {isPrivileged && pendingApprovals.length > 0 && (
+          <PendingApprovals initial={pendingApprovals} />
+        )}
+
         <AlertsRealtime
           initial={alerts}
           userRole={userRole ?? null}

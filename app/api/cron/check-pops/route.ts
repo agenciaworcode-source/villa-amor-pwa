@@ -42,14 +42,23 @@ export async function GET(req: NextRequest) {
     const todayStart = getTodayBrazilStartUTC()
 
     // ── 1. Load active POPs with time constraints ──────────────────────────
-    const { data: pops } = await supabase
+    const { data: rawPops } = await supabase
       .from('pops')
-      .select('id, name, start_time_expected, deadline_time, tolerance_minutes')
+      .select('id, name, start_time_expected, deadline_time, tolerance_minutes, activation_window_minutes, late_permission_minutes, odd_days_only')
       .eq('active', true)
       .not('start_time_expected', 'is', null)
 
-    if (!pops || pops.length === 0) {
+    if (!rawPops || rawPops.length === 0) {
       return NextResponse.json({ checked: 0, created: 0, message: 'No timed POPs' })
+    }
+
+    // Filtrar POPs odd_days_only em dias pares
+    const brazilDayOfMonth = nowBrazil.getUTCDate()
+    const isOddDay = brazilDayOfMonth % 2 !== 0
+    const pops = rawPops.filter(p => !p.odd_days_only || isOddDay)
+
+    if (pops.length === 0) {
+      return NextResponse.json({ checked: 0, created: 0, message: 'No POPs for today (odd day filter)' })
     }
 
     // ── 2. Load active residents ───────────────────────────────────────────
@@ -65,7 +74,7 @@ export async function GET(req: NextRequest) {
     // ── 3. Load today's executions ────────────────────────────────────────
     const { data: todayExecs } = await supabase
       .from('executions')
-      .select('id, pop_id, resident_id, status')
+      .select('id, pop_id, resident_id, status, user_id')
       .gte('created_at', todayStart.toISOString())
 
     const execSet = new Set<string>((todayExecs ?? []).map(e => `${e.pop_id}:${e.resident_id}`))
@@ -96,9 +105,53 @@ export async function GET(req: NextRequest) {
     const now = new Date().toISOString()
 
     // ── 5. Check pop_not_started: POP is past expected time + tolerance ────
+    // Load users to find who should execute each POP
+    const { data: popUsers } = await supabase
+      .from('pop_role_assignments')
+      .select('pop_id, role')
+      .eq('enabled', true)
+      .in('pop_id', pops.map(p => p.id))
+
+    // Build map: pop_id → set of roles assigned
+    const popRoleMap = new Map<string, Set<string>>()
+    for (const row of popUsers ?? []) {
+      if (!popRoleMap.has(row.pop_id)) popRoleMap.set(row.pop_id, new Set())
+      popRoleMap.get(row.pop_id)!.add(row.role)
+    }
+
+    // Load all active collaborators
+    const { data: collaborators } = await supabase
+      .from('users')
+      .select('id, name, role')
+      .eq('active', true)
+
+    // Load pop_late_approvals created today (to avoid re-creating)
+    const { data: todayApprovals } = await supabase
+      .from('pop_late_approvals')
+      .select('user_id, pop_id, status')
+      .gte('requested_at', todayStart.toISOString())
+
+    const approvalSet = new Set<string>(
+      (todayApprovals ?? []).map(a => `${a.user_id}:${a.pop_id}`)
+    )
+
+    const approvalsToInsert: { user_id: string; pop_id: string; minutes_late: number; status: string }[] = []
+
     for (const pop of pops) {
-      const expectedMin = parseTimeToMinutes(pop.start_time_expected)
-      const deadlineMin = expectedMin + (pop.tolerance_minutes ?? 0)
+      const expectedMin  = parseTimeToMinutes(pop.start_time_expected)
+      const windowEnd    = expectedMin + (pop.activation_window_minutes ?? 15)
+      const approvalEnd  = windowEnd   + (pop.late_permission_minutes  ?? 10)
+
+      // Tolerância 10% baseada na duração prevista (deadline - start)
+      let autoToleranceMin = pop.tolerance_minutes ?? 0
+      if (pop.deadline_time) {
+        const deadlineMin = parseTimeToMinutes(pop.deadline_time)
+        const durationMin = deadlineMin - expectedMin
+        if (durationMin > 0) {
+          autoToleranceMin = Math.max(autoToleranceMin, Math.round(durationMin * 0.1))
+        }
+      }
+      const deadlineMin = expectedMin + autoToleranceMin
 
       if (currentMinutes < deadlineMin) continue // not late yet
 
@@ -106,8 +159,6 @@ export async function GET(req: NextRequest) {
         const key = `${pop.id}:${resident.id}`
         if (execSet.has(key)) continue // already has an execution today
 
-        const ak = alertKey('pop_not_started', resident.id, null)
-        // Deduplicate by pop name in the message
         const alreadyExists = (todayAlerts ?? []).some(
           a => a.type === 'pop_not_started' &&
                a.resident_id === resident.id &&
@@ -115,8 +166,8 @@ export async function GET(req: NextRequest) {
         )
         if (alreadyExists) continue
 
-        const overMin = currentMinutes - deadlineMin
-        const severity = overMin > 60 ? 'critical' : overMin > 30 ? 'high' : 'medium'
+        const overMin   = currentMinutes - deadlineMin
+        const severity  = overMin > 60 ? 'critical' : overMin > 30 ? 'high' : 'medium'
 
         toInsert.push({
           type: 'pop_not_started',
@@ -127,15 +178,40 @@ export async function GET(req: NextRequest) {
           triggered_at: now,
         })
       }
+
+      // Auto-solicitar aprovação para colaboradores que deveriam executar este POP
+      // mas passaram do approvalEnd sem iniciar
+      if (currentMinutes > approvalEnd) {
+        const assignedRoles = popRoleMap.get(pop.id) ?? new Set()
+        const relevantUsers = (collaborators ?? []).filter(u => assignedRoles.has(u.role))
+
+        for (const user of relevantUsers) {
+          const approvalKey = `${user.id}:${pop.id}`
+          if (approvalSet.has(approvalKey)) continue // já solicitou hoje
+
+          // Verifica se o usuário tem execução para este POP hoje (qualquer residente)
+          const hasExec = (todayExecs ?? []).some(e =>
+            e.pop_id === pop.id && e.user_id === user.id
+          )
+          if (hasExec) continue
+
+          approvalsToInsert.push({
+            user_id:     user.id,
+            pop_id:      pop.id,
+            minutes_late: currentMinutes - windowEnd,
+            status:      'pending',
+          })
+          approvalSet.add(approvalKey)
+        }
+      }
     }
 
     // ── 6. Check step_late: execution in_progress past deadline ──────────
     if (inProgressExecs.length > 0) {
-      // Get POP deadline times for these executions
       const popIds = [...new Set(inProgressExecs.map(e => e.pop_id))]
       const { data: popDetails } = await supabase
         .from('pops')
-        .select('id, name, deadline_time, tolerance_minutes')
+        .select('id, name, start_time_expected, deadline_time, tolerance_minutes')
         .in('id', popIds)
         .not('deadline_time', 'is', null)
 
@@ -146,7 +222,13 @@ export async function GET(req: NextRequest) {
         const pop = popMap.get(exec.pop_id)
         if (!pop) continue
 
-        const deadlineMin = parseTimeToMinutes(pop.deadline_time) + (pop.tolerance_minutes ?? 0)
+        // Tolerância 10% da duração prevista
+        let tolMin = pop.tolerance_minutes ?? 0
+        if (pop.start_time_expected && pop.deadline_time) {
+          const durMin = parseTimeToMinutes(pop.deadline_time) - parseTimeToMinutes(pop.start_time_expected)
+          if (durMin > 0) tolMin = Math.max(tolMin, Math.round(durMin * 0.1))
+        }
+        const deadlineMin = parseTimeToMinutes(pop.deadline_time) + tolMin
         if (currentMinutes < deadlineMin) continue
 
         const alreadyExists = (todayAlerts ?? []).some(
@@ -169,14 +251,18 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // ── 7. Batch insert new alerts ────────────────────────────────────────
+    // ── 7. Batch insert new alerts + approvals ────────────────────────────
     if (toInsert.length > 0) {
       await supabase.from('alerts').insert(toInsert)
+    }
+    if (approvalsToInsert.length > 0) {
+      await supabase.from('pop_late_approvals').insert(approvalsToInsert)
     }
 
     return NextResponse.json({
       checked: pops.length * residents.length + inProgressExecs.length,
       created: toInsert.length,
+      approvals_created: approvalsToInsert.length,
       brazilTime: `${nowBrazil.getUTCHours().toString().padStart(2,'0')}:${nowBrazil.getUTCMinutes().toString().padStart(2,'0')}`,
     })
   } catch (err) {

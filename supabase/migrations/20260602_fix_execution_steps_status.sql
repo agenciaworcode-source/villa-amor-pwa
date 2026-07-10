@@ -15,3 +15,5 @@ ALTER TABLE execution_steps
 ALTER TABLE execution_steps
   ADD CONSTRAINT execution_steps_status_check
   CHECK (status IN ('pending', 'in_progress', 'completed', 'skipped'));
+
+

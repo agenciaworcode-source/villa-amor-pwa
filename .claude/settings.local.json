@@ -5,7 +5,9 @@
       "Bash(xargs grep *)",
       "Bash(vercel --prod)",
       "Bash(where vercel *)",
-      "Bash(npx vercel *)"
+      "Bash(npx vercel *)",
+      "WebFetch(domain:docs.google.com)",
+      "WebFetch(domain:doc-0o-2c-docstext.googleusercontent.com)"
     ]
   }
 }

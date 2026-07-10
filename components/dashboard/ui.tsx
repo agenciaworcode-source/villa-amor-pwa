@@ -1,6 +1,6 @@
 'use client'
 
-import { ReactNode } from 'react'
+import { ReactNode, CSSProperties } from 'react'
 import { ExecutionStatus } from '@/types'
 
 // ---- Badge ----
@@ -17,10 +17,10 @@ const BADGE_VARIANTS: Record<BadgeVariant, { bg: string; color: string; dotColor
   dark:    { bg: '#2E2E2E', color: '#F7F0E3', dotColor: '#ae8f3b' },
 }
 
-export function Badge({ variant = 'muted', dot = false, children }: { variant?: BadgeVariant; dot?: boolean; children: ReactNode }) {
+export function Badge({ variant = 'muted', dot = false, children, style }: { variant?: BadgeVariant; dot?: boolean; children: ReactNode; style?: CSSProperties }) {
   const v = BADGE_VARIANTS[variant]
   return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 9999, background: v.bg, color: v.color, whiteSpace: 'nowrap' }}>
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 9999, background: v.bg, color: v.color, whiteSpace: 'nowrap', ...style }}>
       {dot && <span style={{ width: 6, height: 6, borderRadius: '50%', background: v.dotColor, flexShrink: 0 }} />}
       {children}
     </span>

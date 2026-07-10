@@ -4,33 +4,29 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { UserProfile } from '@/types'
 import { SectionHeader, Card, Badge, Btn, Divider } from './ui'
-import { UserModal } from './modals/invite-user-modal'
+import { UserModal, ROLE_LABELS } from './modals/invite-user-modal'
 import { ConfirmDialog } from '@/components/shared/confirm-dialog'
 import { userRepository } from '@/services/repositories/user-repository'
 
-const ROLE_LABELS: Record<string, string> = {
-  admin:             'Administrador',
-  supervisor:        'Supervisor',
-  operational:       'Cuidador',
-  enfermeiro:        'Enfermeiro(a)',
-  fisioterapeuta:    'Fisioterapeuta',
-  psicologo:         'Psicólogo(a)',
-  nutricionista:     'Nutricionista',
-  cozinheiro:        'Cozinheiro(a)',
-  limpeza:           'Limpeza',
-  multiprofessional: 'Multiprofissional', // legado
-}
 const ROLE_COLORS: Record<string, 'danger' | 'purple' | 'info' | 'gold'> = {
-  admin:             'danger',
-  supervisor:        'purple',
-  operational:       'gold',
-  enfermeiro:        'info',
-  fisioterapeuta:    'info',
-  psicologo:         'info',
-  nutricionista:     'info',
-  cozinheiro:        'info',
-  limpeza:           'info',
-  multiprofessional: 'info', // legado
+  admin:               'danger',
+  supervisor:          'purple',
+  operational:         'gold',
+  enfermeiro:          'info',
+  fisioterapeuta:      'info',
+  psicologo:           'info',
+  nutricionista:       'info',
+  cozinheiro:          'info',
+  limpeza:             'info',
+  manutencao:          'info',
+  terapia_ocupacional: 'info',
+  estagiario:          'info',
+  menor_aprendiz:      'info',
+  marketing:           'info',
+  resp_tecnica:        'purple',
+  musicoterapeuta:     'info',
+  fonoaudiologa:       'info',
+  multiprofessional:   'info',
 }
 
 function initials(name: string) {
@@ -86,30 +82,47 @@ export function TeamClient({ users: initialUsers }: { users: UserProfile[] }) {
         </Card>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 14 }}>
-          {users.map(member => (
-            <Card key={member.id} style={{ padding: 20 }}>
-              <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start', marginBottom: 14 }}>
-                <div style={{ width: 48, height: 48, borderRadius: '50%', background: '#F7F0E3', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 16, color: '#B8864E', flexShrink: 0 }}>
-                  {initials(member.name)}
-                </div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: '#1C1C1C', marginBottom: 2 }}>{member.name}</div>
-                  <div style={{ fontSize: 11, color: '#9C8E80', marginBottom: 8 }}>{member.email}</div>
-                  <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
-                    <Badge variant={ROLE_COLORS[member.role] ?? 'muted'}>{ROLE_LABELS[member.role] ?? member.role}</Badge>
+          {users.map(member => {
+            // Usa roles múltiplos se existir, senão fallback para role único
+            const roleList = member.roles && member.roles.length > 0
+              ? member.roles
+              : [{ role: member.role, is_primary: true }]
+
+            const primaryEntry = roleList.find(r => r.is_primary) ?? roleList[0]
+            const secondaryRoles = roleList.filter(r => !r.is_primary)
+
+            return (
+              <Card key={member.id} style={{ padding: 20 }}>
+                <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start', marginBottom: 14 }}>
+                  <div style={{ width: 48, height: 48, borderRadius: '50%', background: '#F7F0E3', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 16, color: '#B8864E', flexShrink: 0 }}>
+                    {initials(member.name)}
                   </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: '#1C1C1C', marginBottom: 2 }}>{member.name}</div>
+                    <div style={{ fontSize: 11, color: '#9C8E80', marginBottom: 8, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{member.email}</div>
+                    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                      <Badge variant={ROLE_COLORS[primaryEntry.role] ?? 'muted'}>
+                        {ROLE_LABELS[primaryEntry.role] ?? primaryEntry.role}
+                      </Badge>
+                      {secondaryRoles.map(r => (
+                        <Badge key={r.role} variant="muted" style={{ opacity: 0.75 }}>
+                          {ROLE_LABELS[r.role] ?? r.role}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                  <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#22C55E', flexShrink: 0, marginTop: 6, boxShadow: '0 0 6px #22C55E' }} />
                 </div>
-                <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#22C55E', flexShrink: 0, marginTop: 6, boxShadow: '0 0 6px #22C55E' }} />
-              </div>
-              <Divider />
-              <div style={{ paddingTop: 12, display: 'flex', gap: 6 }}>
-                <Btn variant="secondary" size="sm" onClick={() => openEdit(member)}>Editar</Btn>
-                <Btn variant="ghost" size="sm" onClick={() => setConfirmDeactivateId(member.id)} disabled={deactivatingId === member.id}>
-                  {deactivatingId === member.id ? '...' : 'Desativar'}
-                </Btn>
-              </div>
-            </Card>
-          ))}
+                <Divider />
+                <div style={{ paddingTop: 12, display: 'flex', gap: 6 }}>
+                  <Btn variant="secondary" size="sm" onClick={() => openEdit(member)}>Editar</Btn>
+                  <Btn variant="ghost" size="sm" onClick={() => setConfirmDeactivateId(member.id)} disabled={deactivatingId === member.id}>
+                    {deactivatingId === member.id ? '...' : 'Desativar'}
+                  </Btn>
+                </div>
+              </Card>
+            )
+          })}
         </div>
       )}
 
