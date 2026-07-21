@@ -119,7 +119,8 @@ export const config = {
      * - _next/image (image optimization files)
      * - favicon.ico (favicon file)
      * - villa-amor-logo.png
+     * - tutorial (página pública de tutorial em public/tutorial.html)
      */
-    '/((?!api|_next/static|_next/image|favicon.ico|offline|.*\\.png|.*\\.ico|manifest\\.json|sw\\.js|workbox-.*).*)',
+    '/((?!api|_next/static|_next/image|favicon.ico|offline|tutorial|.*\\.png|.*\\.ico|manifest\\.json|sw\\.js|workbox-.*).*)',
   ],
 }
